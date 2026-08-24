@@ -22,6 +22,24 @@ impl Default for ConversionConfig {
     }
 }
 
+/// Hard ceiling for the generation budget, whatever the reading length.
+/// Bounds inference time on abnormal inputs that never reach EOS.
+const MAX_GENERATION_BUDGET: usize = 256;
+
+/// Generation budget in tokens for a reading of `reading_chars` characters.
+///
+/// `configured_max` (`ConversionConfig::max_new_tokens`) acts as the floor:
+/// short readings keep the configured budget, while long readings get
+/// `reading_chars * 2 + 8` so the output is never truncated merely because
+/// the reading was long. Kanji output is at most ~1 token per reading char
+/// and byte-fallback runs cost up to 3 tokens per char, so 2x + slack covers
+/// real conversions; [`MAX_GENERATION_BUDGET`] caps the pathological case.
+pub fn generation_budget(reading_chars: usize, configured_max: usize) -> usize {
+    (reading_chars.saturating_mul(2).saturating_add(8))
+        .max(configured_max)
+        .min(MAX_GENERATION_BUDGET)
+}
+
 /// Build a prompt in jinen format.
 ///
 /// The prompt is NFKC-normalized: jinen models are trained on NFKC text and
@@ -179,6 +197,34 @@ impl KanaKanjiConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generation_budget_uses_configured_max_as_floor() {
+        // Short readings keep the configured budget.
+        assert_eq!(generation_budget(0, 50), 50);
+        assert_eq!(generation_budget(10, 50), 50);
+        // 21 chars is the break-even: 21 * 2 + 8 = 50.
+        assert_eq!(generation_budget(21, 50), 50);
+        assert_eq!(generation_budget(22, 50), 52);
+    }
+
+    #[test]
+    fn generation_budget_scales_with_reading_length() {
+        assert_eq!(generation_budget(30, 50), 68);
+        assert_eq!(generation_budget(45, 50), 98);
+        // A configured max above the formula wins.
+        assert_eq!(generation_budget(30, 100), 100);
+    }
+
+    #[test]
+    fn generation_budget_is_capped() {
+        assert_eq!(generation_budget(1000, 50), MAX_GENERATION_BUDGET);
+        assert_eq!(generation_budget(124, 50), MAX_GENERATION_BUDGET);
+        // 123 chars: 123 * 2 + 8 = 254, just under the cap.
+        assert_eq!(generation_budget(123, 50), 254);
+        // The cap also bounds an oversized configured max.
+        assert_eq!(generation_budget(10, 10_000), MAX_GENERATION_BUDGET);
+    }
 
     #[test]
 
