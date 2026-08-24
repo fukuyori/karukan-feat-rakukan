@@ -281,6 +281,20 @@ impl InputMethodEngine {
             Keysym::RIGHT => self.move_caret_right(),
             Keysym::HOME => self.move_caret_home(),
             Keysym::END => self.move_caret_end(),
+            // F6/F7/F8: whole-composition transform to ひらがな /
+            // 全角カタカナ / 半角カタカナ (mozc-style).
+            Keysym::F6 | Keysym::F7 | Keysym::F8 => {
+                let index = super::fkeys::fkey_transform_index(key.keysym)
+                    .expect("arm matches F6..F8 only");
+                self.fkey_conversion(index)
+            }
+            // F9/F10: the typed keystrokes as 全角 / 半角 alphanumerics,
+            // cycling case on repeat.
+            Keysym::F9 | Keysym::F10 => {
+                let full = super::fkeys::fkey_alnum_fullwidth(key.keysym)
+                    .expect("arm matches F9/F10 only");
+                self.fkey_alnum_conversion(full)
+            }
             _ => {
                 if let Some(ch) = key.to_char()
                     && !key.modifiers.control_key

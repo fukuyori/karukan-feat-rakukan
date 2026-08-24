@@ -556,6 +556,21 @@ impl InputMethodEngine {
             Keysym::LEFT | Keysym::RIGHT | Keysym::HOME | Keysym::END => {
                 self.in_composing(false, |e| e.process_key_composing(key, shift_active))
             }
+            // F6/F7/F8 rebuild the conversion as the fixed transform list
+            // (ひらがな / 全角カタカナ / 半角カタカナ) with the pressed
+            // key's transform selected.
+            Keysym::F6 | Keysym::F7 | Keysym::F8 => {
+                let index = super::fkeys::fkey_transform_index(key.keysym)
+                    .expect("arm matches F6..F8 only");
+                self.fkey_conversion(index)
+            }
+            // F9/F10: the typed keystrokes as 全角 / 半角 alphanumerics,
+            // cycling case on repeat.
+            Keysym::F9 | Keysym::F10 => {
+                let full = super::fkeys::fkey_alnum_fullwidth(key.keysym)
+                    .expect("arm matches F9/F10 only");
+                self.fkey_alnum_conversion(full)
+            }
             _ => {
                 // Ctrl+N / Ctrl+P: emacs-style candidate navigation
                 if key.modifiers.control_key {
