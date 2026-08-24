@@ -1,0 +1,93 @@
+[
+  {
+    "id": "long-01",
+    "category": "long_reading",
+    "reading": "きょうはあさからあめがふっていてでんしゃもおくれていたのでかいしゃにちこくしてしまいました",
+    "context": "",
+    "note": "EOSに達しにくい長文。チャンク上限(30)を超える読みを一括で与える"
+  },
+  {
+    "id": "long-02",
+    "category": "long_reading",
+    "reading": "じんこうちのうをもちいたかなかんじへんかんえんじんのせいのうひょうかをじっしする",
+    "context": "",
+    "note": "複合名詞が連続する長い読み"
+  },
+  {
+    "id": "repeat-01",
+    "category": "repeat_prone",
+    "reading": "とうきょうとっきょきょかきょく",
+    "context": "",
+    "note": "同音の連続で同一句の二重出力を誘発しやすい"
+  },
+  {
+    "id": "repeat-02",
+    "category": "repeat_prone",
+    "reading": "にわにはにわにわとりがいる",
+    "context": "",
+    "note": "「にわ」の反復を含む読み"
+  },
+  {
+    "id": "repeat-03",
+    "category": "repeat_prone",
+    "reading": "すもももももももものうち",
+    "context": "",
+    "note": "「もも」の連続。正当な文でもあるため両カテゴリの境界例"
+  },
+  {
+    "id": "legit-01",
+    "category": "legit_repeat",
+    "reading": "わかったわかった",
+    "context": "",
+    "note": "正当な反復表現。退化候補フィルタが誤検出してはならない"
+  },
+  {
+    "id": "legit-02",
+    "category": "legit_repeat",
+    "reading": "まだまだこれからです",
+    "context": "",
+    "note": "正当な畳語を含む読み"
+  },
+  {
+    "id": "echo-01",
+    "category": "context_echo",
+    "reading": "きょうはいいてんきですね",
+    "context": "きょうはいいてんきですね",
+    "note": "読みと同一の未変換かな文がcontextに含まれる"
+  },
+  {
+    "id": "echo-02",
+    "category": "context_echo",
+    "reading": "あしたはあめ",
+    "context": "あしたはあめかもしれないとおもった",
+    "note": "読みを先頭に含む未変換かな文がcontextに含まれる"
+  },
+  {
+    "id": "echo-03",
+    "category": "context_echo_control",
+    "reading": "てんき",
+    "context": "今日はいい",
+    "note": "漢字混じりの正しいcontext。エコー対策が除外してはならない対照例"
+  },
+  {
+    "id": "digit-01",
+    "category": "digits",
+    "reading": "2024ねん4がつ1にちにかいぎがあります",
+    "context": "",
+    "note": "日付の数字。桁の脱落・重複を観測する(通常はchunk機構がモデルから分離する入力)"
+  },
+  {
+    "id": "digit-02",
+    "category": "digits",
+    "reading": "かたばんhb101をこうにゅうした",
+    "context": "",
+    "note": "型番の英数字混在"
+  },
+  {
+    "id": "digit-03",
+    "category": "digits",
+    "reading": "usbめもりを3こかいました",
+    "context": "",
+    "note": "英字と数字の混在"
+  }
+]

@@ -39,6 +39,8 @@ data/
 !karukan-engine/data/
 *.json
 !renovate.json
+# Tracked data: Phase 0 baseline cases and outputs (docs/baselines/README.md)
+!docs/baselines/*.json
 *.cache
 
 .fake
