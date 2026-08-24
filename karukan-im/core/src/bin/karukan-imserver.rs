@@ -23,6 +23,8 @@ fn main() {
         .with_writer(std::io::stderr)
         .init();
 
+    tracing::info!("karukan-imserver {}", karukan_im::version());
+
     if std::env::args().any(|arg| arg == "--prefetch-models") {
         if let Err(e) = karukan_engine::kanji::hf_download::prefetch_all_models() {
             tracing::error!("model prefetch failed: {e}");

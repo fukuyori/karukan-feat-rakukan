@@ -18,6 +18,13 @@ extern "C" {
 typedef struct KarukanEngine KarukanEngine;
 
 /*
+ * Build identification of the loaded library: crate version plus the git
+ * commit it was built from (e.g. "0.1.0+a1fe298", "-dirty" appended for
+ * uncommitted changes). Static string; do not free.
+ */
+const char* karukan_version(void);
+
+/*
  * Create a new Karukan engine instance.
  * Returns a pointer to the engine, or NULL on failure.
  * The caller is responsible for freeing the engine with karukan_engine_free().

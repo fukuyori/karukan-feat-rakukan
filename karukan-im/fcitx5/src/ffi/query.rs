@@ -5,6 +5,18 @@ use std::ptr;
 
 use super::{KarukanEngine, ffi_mut, ffi_ref};
 
+/// Build identification of the loaded library (crate version + git commit,
+/// e.g. `0.1.0+a1fe298`). Static string, never freed by the caller.
+#[unsafe(no_mangle)]
+pub extern "C" fn karukan_version() -> *const c_char {
+    static VERSION: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+    VERSION
+        .get_or_init(|| {
+            CString::new(karukan_im::version()).unwrap_or_else(|_| CString::new("invalid").unwrap())
+        })
+        .as_ptr()
+}
+
 /// Check if there's a preedit update pending
 #[unsafe(no_mangle)]
 pub extern "C" fn karukan_engine_has_preedit(engine: *const KarukanEngine) -> c_int {

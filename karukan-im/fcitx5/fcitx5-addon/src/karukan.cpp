@@ -6,6 +6,7 @@
 
 #include <fcitx-utils/i18n.h>
 #include <fcitx-utils/key.h>
+#include <fcitx-utils/log.h>
 #include <fcitx-utils/utf8.h>
 #include <fcitx/inputpanel.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
@@ -107,7 +108,7 @@ void KarukanState::keyEvent(KeyEvent& keyEvent) {
         {
             auto& inputPanel = ic_->inputPanel();
             Text aux;
-            aux.append("Karukan: Loading model...");
+            aux.append(std::string("Karukan ") + karukan_version() + ": Loading model...");
             inputPanel.setAuxUp(aux);
             ic_->updatePreedit();
             ic_->updateUserInterface(UserInterfaceComponent::InputPanel);
@@ -267,6 +268,7 @@ void KarukanState::emitPendingCommit() {
 KarukanEngine::KarukanEngine(Instance* instance)
     : instance_(instance),
       factory_([this](InputContext& ic) { return new KarukanState(this, &ic); }) {
+    FCITX_INFO() << "Karukan " << karukan_version();
     instance_->inputContextManager().registerProperty("karukanState", &factory_);
 }
 
