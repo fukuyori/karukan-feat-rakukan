@@ -209,6 +209,16 @@ impl KanaKanjiConverter {
                 let text = self.model.decode(&c.tokens, true)?;
                 let clean = clean_model_output(&text);
 
+                // Observation stage of the confidence filter (Phase 1-E):
+                // log the length-normalized score only. A rejection rule is
+                // added once real distributions have been collected.
+                tracing::debug!(
+                    "candidate {:?}: avg_logprob {:.3} over {} tokens",
+                    clean,
+                    c.score / c.tokens.len().max(1) as f32,
+                    c.tokens.len()
+                );
+
                 push_checked(&mut candidates, clean);
             }
         }
