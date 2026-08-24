@@ -5,6 +5,7 @@ pub mod error;
 pub mod hf_download;
 pub mod llamacpp;
 pub mod model_config;
+mod quality;
 
 pub use backend::{
     Backend, ConversionConfig, KanaKanjiConverter, build_jinen_prompt, clean_model_output,
@@ -16,6 +17,7 @@ pub use hf_download::{
 pub use llama_cpp_2::token::LlamaToken;
 pub use llamacpp::{BeamCandidate, LlamaCppModel, NllScorer};
 pub use model_config::{ModelFamily, ModelRegistry, VariantConfig, registry};
+pub use quality::{DegenerateReason, degenerate_reason};
 
 /// Special tokens for jinen format
 pub const CONTEXT_TOKEN: char = '\u{ee02}';
