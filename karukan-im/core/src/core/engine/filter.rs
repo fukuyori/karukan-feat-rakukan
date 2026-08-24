@@ -114,7 +114,7 @@ impl InputMethodEngine {
         let view = self.source_view(next, &reading);
         let list = self.settle_candidates(view);
         let selected = list.selected_text().unwrap_or(&reading).to_string();
-        let preedit = Preedit::with_text_highlighted(&selected);
+        let preedit = self.conversion_preedit(&selected);
         // The aux leads with what the user typed, tail included — typing
         // refines the view in place, and the selected candidate's own
         // reading would otherwise be the only thing on the line, leaving no

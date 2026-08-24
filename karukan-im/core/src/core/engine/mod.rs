@@ -15,6 +15,7 @@ mod input;
 mod input_buffer;
 mod mode;
 mod model;
+mod range;
 mod strategy;
 mod types;
 mod user_dicts;
@@ -185,6 +186,13 @@ pub struct InputMethodEngine {
     user_dict_watcher: Option<user_dicts::UserDictWatcher>,
     /// When the watcher last ran, for the poll throttle.
     user_dicts_checked: Option<std::time::Instant>,
+    /// Range selection while composing: `Some(n)` selects the first `n`
+    /// reading characters (Shift+Right/Left). Cleared with the composition.
+    range_select: Option<usize>,
+    /// Scope of the active conversion: `Some(n)` means it covers only the
+    /// first `n` reading characters (a range conversion) and Enter commits
+    /// partially; `None` is the ordinary whole-reading conversion.
+    conversion_span: Option<usize>,
 }
 
 impl InputMethodEngine {
@@ -214,6 +222,8 @@ impl InputMethodEngine {
             model_loading: None,
             user_dict_watcher: None,
             user_dicts_checked: None,
+            range_select: None,
+            conversion_span: None,
         }
     }
 
@@ -301,6 +311,8 @@ impl InputMethodEngine {
         self.chunks.clear();
         self.chunk_breaks.clear();
         self.shown_suggestions = CandidateList::default();
+        self.range_select = None;
+        self.conversion_span = None;
     }
 
     /// End the composition: clear the buffer, live display, and chunks,
@@ -679,8 +691,14 @@ impl InputMethodEngine {
                 let (text, reading, source) = self
                     .selected_conversion_info()
                     .expect("state is Conversion");
+                // A focus-out during a range conversion commits everything:
+                // the selected head plus the unconverted remainder as kana.
+                let remainder: String = match self.conversion_span {
+                    Some(n) => self.input_buf.reading().chars().skip(n).collect(),
+                    None => String::new(),
+                };
                 self.finish_conversion(&text, &reading, source);
-                text
+                format!("{text}{remainder}")
             }
         };
         self.surrounding_context = None;

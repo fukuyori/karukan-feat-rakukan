@@ -20,6 +20,7 @@ mod mode_toggle;
 mod passthrough;
 mod pending_romaji;
 mod predictive;
+mod range;
 mod rewriter;
 mod source_filter;
 mod strategy;

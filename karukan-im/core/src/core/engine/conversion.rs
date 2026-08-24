@@ -8,6 +8,7 @@ use tracing::debug;
 
 use super::filter::source_for_key;
 use super::*;
+use crate::core::preedit::{AttributeType, PreeditSegment};
 
 /// Maximum number of learning candidates to show
 const MAX_LEARNING_CANDIDATES: usize = 3;
@@ -89,6 +90,8 @@ impl CandidateBuilder {
 impl InputMethodEngine {
     /// Start kanji conversion for the current buffer (Space/Down/Tab).
     pub(super) fn start_conversion(&mut self, learning: LearningLookup) -> EngineResult {
+        // A fresh conversion always covers the whole reading.
+        self.conversion_span = None;
         // Resolve the reading without touching the composition, so Esc
         // returns to an editable buffer with the romaji tail still live.
         let reading = self.input_buf.settled_reading(&self.converters.romaji);
@@ -139,7 +142,7 @@ impl InputMethodEngine {
 
     /// Map builder output to the public [`CandidateList`] shown in the
     /// conversion window, settled at the configured width.
-    fn to_conversion_candidate_list(
+    pub(super) fn to_conversion_candidate_list(
         &self,
         candidates: Vec<AnnotatedCandidate>,
         reading: &str,
@@ -163,7 +166,7 @@ impl InputMethodEngine {
     ) -> EngineResult {
         let selected_text = candidates.selected_text().unwrap_or(reading).to_string();
 
-        let preedit = Preedit::with_text_highlighted(&selected_text);
+        let preedit = self.conversion_preedit(&selected_text);
 
         self.state = InputState::Conversion {
             preedit: preedit.clone(),
@@ -674,6 +677,9 @@ impl InputMethodEngine {
     /// would be pure waste. The flag lives and dies inside this call, so no
     /// other path can inherit it.
     fn in_composing<R>(&mut self, discard_render: bool, edit: impl FnOnce(&mut Self) -> R) -> R {
+        // Dropping back to composing dissolves the conversion, so a range
+        // conversion's scope must not outlive it.
+        self.conversion_span = None;
         self.set_composing_state();
         self.suppress_suggest = discard_render;
         let out = edit(self);
@@ -735,8 +741,34 @@ impl InputMethodEngine {
         self.end_composition();
     }
 
+    /// Preedit for the conversion display: the selected candidate
+    /// highlighted, plus — when the conversion covers only the reading's
+    /// head (a range conversion) — the unconverted remainder underlined
+    /// after it.
+    pub(super) fn conversion_preedit(&self, selected_text: &str) -> Preedit {
+        let remainder: String = match self.conversion_span {
+            Some(n) => self.input_buf.reading().chars().skip(n).collect(),
+            None => String::new(),
+        };
+        if remainder.is_empty() {
+            Preedit::with_text_highlighted(selected_text)
+        } else {
+            let caret = selected_text.chars().count();
+            Preedit::from_segments(
+                vec![
+                    PreeditSegment::highlighted(selected_text),
+                    PreeditSegment::new(remainder, AttributeType::Underline),
+                ],
+                caret,
+            )
+        }
+    }
+
     /// Commit the current conversion
     fn commit_conversion(&mut self) -> EngineResult {
+        if let Some(n) = self.conversion_span {
+            return self.commit_range(n);
+        }
         let Some((text, reading, source)) = self.selected_conversion_info() else {
             return EngineResult::not_consumed();
         };
@@ -823,6 +855,7 @@ impl InputMethodEngine {
         if !matches!(self.state, InputState::Conversion { .. }) {
             return EngineResult::not_consumed();
         }
+        self.conversion_span = None;
 
         if self.input_buf.is_empty() {
             self.state = InputState::Empty;
@@ -897,7 +930,7 @@ impl InputMethodEngine {
         selected_text: &str,
         candidates: CandidateList,
     ) -> EngineResult {
-        let preedit = Preedit::with_text_highlighted(selected_text);
+        let preedit = self.conversion_preedit(selected_text);
 
         if let Some(p) = self.state.preedit_mut() {
             *p = preedit.clone();

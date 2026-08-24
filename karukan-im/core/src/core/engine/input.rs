@@ -223,6 +223,25 @@ impl InputMethodEngine {
         key: &KeyEvent,
         shift_active: bool,
     ) -> EngineResult {
+        // Range mode (Shift+Right/Left selection over the reading head):
+        // Space converts the selection, Escape leaves the mode, the
+        // selection keys are handled in the main match below, and any
+        // other key drops the selection first and is then processed as
+        // usual — editing inside a range is deliberately not a thing.
+        if self.range_select.is_some()
+            && !(shift_active && matches!(key.keysym, Keysym::LEFT | Keysym::RIGHT))
+        {
+            match key.keysym {
+                Keysym::ESCAPE => return self.cancel_range(),
+                Keysym::SPACE if !key.modifiers.control_key => {
+                    return self.start_range_conversion();
+                }
+                _ => {
+                    self.range_select = None;
+                }
+            }
+        }
+
         // Handle Ctrl+key shortcuts
         if key.modifiers.control_key {
             match key.keysym {
@@ -277,6 +296,11 @@ impl InputMethodEngine {
             // different conversion path — PredictAndConvert — in the same spirit).
             Keysym::TAB => self.start_conversion(LearningLookup::Skip),
             Keysym::SPACE | Keysym::DOWN => self.start_conversion(LearningLookup::Use),
+            // Shift+Right grows the range selection (entering the range
+            // mode on the first press); Shift+Left shrinks it while one
+            // is active, and stays a plain caret move otherwise.
+            Keysym::RIGHT if shift_active => self.range_extend(),
+            Keysym::LEFT if shift_active && self.range_select.is_some() => self.range_shrink(),
             Keysym::LEFT => self.move_caret_left(),
             Keysym::RIGHT => self.move_caret_right(),
             Keysym::HOME => self.move_caret_home(),
