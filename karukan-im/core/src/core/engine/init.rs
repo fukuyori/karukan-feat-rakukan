@@ -265,7 +265,7 @@ impl InputMethodEngine {
     ///
     /// Default directory: `~/.local/share/karukan-im/user_dicts/`
     pub fn init_user_dictionaries(&mut self) {
-        if self.dicts.user.is_some() {
+        if self.user_dict_watcher.is_some() {
             return;
         }
 
@@ -274,62 +274,16 @@ impl InputMethodEngine {
             return;
         };
 
-        if !dir.exists() {
-            debug!(
-                "User dictionary directory {:?} does not exist, skipping",
-                dir
-            );
-            return;
+        // The watcher owns loading from here on: the initial refresh is the
+        // one-shot load this used to do, and later refreshes (throttled at
+        // the top of process_key) pick up edits without an IME restart. A
+        // directory that does not exist yet reads as empty, so creating it
+        // later is detected like any other change.
+        let mut watcher = super::user_dicts::UserDictWatcher::new(dir);
+        if let Some(merged) = watcher.refresh() {
+            self.dicts.user = merged;
         }
-
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            debug!("Failed to read user dictionary directory {:?}", dir);
-            return;
-        };
-        let mut paths: Vec<std::path::PathBuf> = entries
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.is_file())
-            .collect();
-
-        if paths.is_empty() {
-            debug!("No files in user dictionary directory {:?}", dir);
-            return;
-        }
-
-        // Sort for deterministic load order (alphabetical)
-        paths.sort();
-
-        let mut dicts = Vec::new();
-        for path in &paths {
-            match Dictionary::load_auto(path) {
-                Ok(dict) => {
-                    debug!("User dictionary loaded from {:?}", path);
-                    dicts.push(dict);
-                }
-                Err(e) => {
-                    debug!("Failed to load user dictionary from {:?}: {}", path, e);
-                }
-            }
-        }
-
-        if dicts.is_empty() {
-            return;
-        }
-
-        match Dictionary::merge(&dicts) {
-            Ok(Some(merged)) => {
-                debug!(
-                    "User dictionaries merged successfully ({} files from {:?})",
-                    paths.len(),
-                    dir
-                );
-                self.dicts.user = Some(merged);
-            }
-            Ok(None) => {}
-            Err(e) => {
-                debug!("Failed to merge user dictionaries: {}", e);
-            }
-        }
+        self.user_dict_watcher = Some(watcher);
+        self.user_dicts_checked = Some(std::time::Instant::now());
     }
 }
