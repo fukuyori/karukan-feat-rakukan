@@ -809,6 +809,12 @@ impl LlamaCppModel {
                 .with_n_ubatch(batch_cap as u32),
         )?;
 
+        // This context is sized to the model's fixed n_ctx (unlike beam
+        // search, which sizes cells to its budget), so the last generated
+        // position must stay below it: clamp instead of failing the decode.
+        let max_new_tokens =
+            max_new_tokens.min((self.n_ctx as usize).saturating_sub(input_tokens.len()));
+
         let mut batch = LlamaBatch::new(batch_cap, 1);
         let mut generated = input_tokens.to_vec();
 

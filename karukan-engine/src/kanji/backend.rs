@@ -147,13 +147,15 @@ impl KanaKanjiConverter {
         let tokens = self.model.tokenize(&prompt)?;
         let eos = Some(self.model.eos_token_id().0);
 
+        // Budget scales with the reading so long readings aren't truncated
+        // mid-output by the fixed configured maximum.
+        let budget = generation_budget(katakana.chars().count(), self.config.max_new_tokens);
+
         let mut candidates = Vec::with_capacity(num_candidates);
 
         if num_candidates == 1 {
             // Single candidate: use greedy decoding (faster)
-            let output_tokens = self
-                .model
-                .generate(&tokens, self.config.max_new_tokens, eos)?;
+            let output_tokens = self.model.generate(&tokens, budget, eos)?;
             let generated = &output_tokens[tokens.len()..];
             let text = self.model.decode(generated, true)?;
             let clean = clean_model_output(&text);
@@ -163,12 +165,9 @@ impl KanaKanjiConverter {
             }
         } else {
             // Multiple candidates: use beam search
-            let results = self.model.generate_beam_search(
-                &tokens,
-                self.config.max_new_tokens,
-                eos,
-                num_candidates,
-            )?;
+            let results = self
+                .model
+                .generate_beam_search(&tokens, budget, eos, num_candidates)?;
 
             for (output_tokens, _score) in results {
                 let text = self.model.decode(&output_tokens, true)?;
