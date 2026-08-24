@@ -165,7 +165,7 @@ impl KanaKanjiConverter {
         // Degenerate output (echoes, runaway repetition, extreme lengths) is
         // dropped instead of surfacing as a candidate; when everything is
         // dropped the reading fallback below still applies.
-        let mut push_checked =
+        let push_checked =
             |candidates: &mut Vec<String>, clean: String| match super::quality::degenerate_reason(
                 &clean, reading,
             ) {
