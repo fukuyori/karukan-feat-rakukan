@@ -34,6 +34,10 @@ pub struct LearningConfig {
     /// accepts. Keeps whole-sentence live-conversion commits — one-off text
     /// that never matches again — out of the cache.
     pub max_surface_chars: usize,
+    /// Days after which an entry unused since `last_access` is dropped at
+    /// load time. `0` disables the expiry (entries live until evicted by
+    /// [`max_entries`](Self::max_entries) or deleted by hand).
+    pub stale_days: u32,
 }
 
 impl LearningConfig {
@@ -41,6 +45,8 @@ impl LearningConfig {
     pub const DEFAULT_MAX_ENTRIES: usize = 10_000;
     /// Default for [`max_surface_chars`](Self::max_surface_chars).
     pub const DEFAULT_MAX_SURFACE_CHARS: usize = 50;
+    /// Default for [`stale_days`](Self::stale_days): expiry disabled.
+    pub const DEFAULT_STALE_DAYS: u32 = 0;
 }
 
 impl Default for LearningConfig {
@@ -48,6 +54,7 @@ impl Default for LearningConfig {
         Self {
             max_entries: Self::DEFAULT_MAX_ENTRIES,
             max_surface_chars: Self::DEFAULT_MAX_SURFACE_CHARS,
+            stale_days: Self::DEFAULT_STALE_DAYS,
         }
     }
 }
@@ -61,6 +68,7 @@ pub struct LearningCache {
     entries: HashMap<String, Vec<LearningEntry>>,
     max_entries: usize,
     max_surface_chars: usize,
+    stale_days: u32,
     dirty: bool,
 }
 
@@ -71,6 +79,7 @@ impl LearningCache {
             entries: HashMap::new(),
             max_entries: config.max_entries,
             max_surface_chars: config.max_surface_chars,
+            stale_days: config.stale_days,
             dirty: false,
         }
     }
@@ -193,9 +202,29 @@ impl LearningCache {
                 });
         }
 
-        // Not dirty — just loaded from disk
-        cache.dirty = false;
+        // Entries just loaded from disk are clean; expiring stale ones makes
+        // the cache dirty so the next save persists the cleanup to the TSV.
+        cache.dirty = cache.remove_stale(now_unix()) > 0;
         Ok(cache)
+    }
+
+    /// Drop entries whose `last_access` is more than `stale_days` days
+    /// before `now`. Returns how many were removed; no-op when
+    /// `stale_days` is 0 (expiry disabled). Does not touch `dirty` — the
+    /// caller decides what a removal means for persistence.
+    fn remove_stale(&mut self, now: u64) -> usize {
+        if self.stale_days == 0 {
+            return 0;
+        }
+        let cutoff = now.saturating_sub(u64::from(self.stale_days) * 86_400);
+        let mut removed = 0;
+        self.entries.retain(|_, entries| {
+            let before = entries.len();
+            entries.retain(|e| e.last_access >= cutoff);
+            removed += before - entries.len();
+            !entries.is_empty()
+        });
+        removed
     }
 
     /// Save the cache to a TSV file, evicting low-score entries if over capacity.
@@ -323,6 +352,86 @@ mod tests {
         LearningCache::new(config_with(max_entries))
     }
     use tempfile::NamedTempFile;
+
+    /// Write a TSV with one fresh entry and one `age_days`-old entry, then
+    /// load it with the given `stale_days`.
+    fn load_with_aged_entry(stale_days: u32, age_days: u64) -> LearningCache {
+        let now = now_unix();
+        let old = now - age_days * 86_400;
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(
+            file.path(),
+            format!("きょう\t今日\t3\t{now}\nむかし\t昔\t5\t{old}\n"),
+        )
+        .unwrap();
+        LearningCache::load(
+            file.path(),
+            LearningConfig {
+                stale_days,
+                ..LearningConfig::default()
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn stale_expiry_disabled_by_default_keeps_ancient_entries() {
+        // stale_days = 0 (the default): nothing expires, load stays clean.
+        let cache = load_with_aged_entry(0, 3650);
+        assert_eq!(cache.entry_count(), 2);
+        assert!(!cache.is_dirty());
+    }
+
+    #[test]
+    fn stale_entries_are_dropped_at_load_and_marked_dirty() {
+        let cache = load_with_aged_entry(180, 181);
+        assert_eq!(cache.entry_count(), 1);
+        assert!(cache.lookup("むかし").is_empty());
+        assert!(!cache.lookup("きょう").is_empty());
+        // The cleanup must reach the TSV at the next save.
+        assert!(cache.is_dirty());
+    }
+
+    #[test]
+    fn entries_within_stale_days_survive_and_load_stays_clean() {
+        let cache = load_with_aged_entry(180, 179);
+        assert_eq!(cache.entry_count(), 2);
+        assert!(!cache.is_dirty());
+    }
+
+    #[test]
+    fn stale_boundary_is_inclusive() {
+        // last_access exactly at the cutoff (age == stale_days) is kept:
+        // the entry becomes stale strictly *after* stale_days days.
+        let mut cache = LearningCache::new(LearningConfig {
+            stale_days: 30,
+            ..LearningConfig::default()
+        });
+        let now = now_unix();
+        cache.entries.insert(
+            "きょう".to_string(),
+            vec![LearningEntry {
+                surface: "今日".to_string(),
+                frequency: 1,
+                last_access: now - 30 * 86_400,
+            }],
+        );
+        assert_eq!(cache.remove_stale(now), 0);
+        assert_eq!(cache.remove_stale(now + 1), 1);
+    }
+
+    #[test]
+    fn stale_cleanup_persists_through_save() {
+        let cache = load_with_aged_entry(180, 200);
+        let file = NamedTempFile::new().unwrap();
+        let mut cache = cache;
+        cache.save(file.path()).unwrap();
+
+        // A later load without expiry must not resurrect the stale entry.
+        let reloaded = LearningCache::load(file.path(), config_with(100)).unwrap();
+        assert_eq!(reloaded.entry_count(), 1);
+        assert!(reloaded.lookup("むかし").is_empty());
+    }
 
     #[test]
     fn test_record_and_lookup() {
@@ -548,6 +657,7 @@ mod tests {
         let mut cache = LearningCache::new(LearningConfig {
             max_entries: 100,
             max_surface_chars: 5,
+            ..LearningConfig::default()
         });
 
         cache.record("あ", &"漢".repeat(6));
@@ -564,6 +674,7 @@ mod tests {
         let mut cache = LearningCache::new(LearningConfig {
             max_entries: 100,
             max_surface_chars: 5,
+            ..LearningConfig::default()
         });
 
         // Only the surface is capped; a long reading with a short surface
