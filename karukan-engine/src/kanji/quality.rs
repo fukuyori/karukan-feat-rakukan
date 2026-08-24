@@ -143,6 +143,84 @@ fn is_kana_char(c: char) -> bool {
     matches!(c, '\u{3041}'..='\u{3096}' | '\u{30A1}'..='\u{30FA}' | '\u{30FC}' | 'ゝ' | 'ゞ' | 'ヽ' | 'ヾ')
 }
 
+/// The echo-context filter only applies when the reading has at least this
+/// many kana: a short reading matches context sentences by coincidence far
+/// too easily.
+const ECHO_MIN_READING_KANA: usize = 5;
+
+/// How many leading kana of the reading must appear in a context sentence
+/// for it to count as an echo of the input.
+const ECHO_HEAD_LEN: usize = 5;
+
+/// Remove from `context` any sentence that is an unconverted (kanji-free)
+/// echo of the reading's head, leaving every other sentence verbatim.
+///
+/// The composing buffer's own text can leak into the conversion context —
+/// most directly when a chunk's model call comes back empty and the raw kana
+/// reading is used as that chunk's converted text. A context that repeats
+/// the input kana pulls the model toward echoing kana instead of converting.
+/// Only the offending sentence is dropped, never the whole context, and the
+/// caller's stored context is untouched — this filters what the model sees,
+/// not what is remembered.
+///
+/// A sentence with any kanji is never dropped: it is converted text, i.e.
+/// exactly the context the model should keep, even when its kana overlaps
+/// the reading.
+pub fn echo_free_context(context: &str, reading: &str) -> String {
+    if context.is_empty() {
+        return String::new();
+    }
+    let reading_kana: String = katakana_to_hiragana(reading)
+        .chars()
+        .filter(|&c| is_kana_char(c))
+        .collect();
+    if reading_kana.chars().count() < ECHO_MIN_READING_KANA {
+        return context.to_string();
+    }
+    let echo_head: String = reading_kana.chars().take(ECHO_HEAD_LEN).collect();
+
+    split_sentences(context)
+        .into_iter()
+        .filter(|s| !is_echo_sentence(s, &echo_head))
+        .collect()
+}
+
+/// Split into segments, each keeping its trailing delimiter (。．！？!?
+/// or newline). Text after the last delimiter forms the final segment.
+fn split_sentences(context: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    for (i, c) in context.char_indices() {
+        if matches!(c, '。' | '．' | '！' | '？' | '!' | '?' | '\n') {
+            let end = i + c.len_utf8();
+            out.push(&context[start..end]);
+            start = end;
+        }
+    }
+    if start < context.len() {
+        out.push(&context[start..]);
+    }
+    out
+}
+
+/// An echo sentence is kanji-free and contains the reading's head among its
+/// kana. Kana are compared hiragana-normalized with everything else
+/// (punctuation, ascii, digits) ignored, since the echo of interest is the
+/// typed kana itself.
+fn is_echo_sentence(sentence: &str, echo_head: &str) -> bool {
+    if sentence
+        .chars()
+        .any(|c| matches!(c, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}' | '々'))
+    {
+        return false;
+    }
+    let kana: String = katakana_to_hiragana(sentence)
+        .chars()
+        .filter(|&c| is_kana_char(c))
+        .collect();
+    kana.contains(echo_head)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +334,58 @@ mod tests {
     #[test]
     fn allows_non_kana_parentheticals() {
         assert_eq!(reason("株式会社(仮)", "かぶしきがいしゃかり"), None);
+    }
+
+    #[test]
+    fn echo_context_drops_identical_kana_sentence() {
+        assert_eq!(
+            echo_free_context("きょうはいいてんきですね", "きょうはいいてんきですね"),
+            ""
+        );
+    }
+
+    #[test]
+    fn echo_context_drops_only_the_offending_sentence() {
+        assert_eq!(
+            echo_free_context(
+                "今日は晴れ。あしたはあめかもしれない。また明日。",
+                "あしたはあめ"
+            ),
+            "今日は晴れ。また明日。"
+        );
+    }
+
+    #[test]
+    fn echo_context_keeps_kanji_sentences() {
+        // Converted text is exactly the context the model should keep,
+        // even when its kana overlaps the reading.
+        assert_eq!(
+            echo_free_context("明日はあめかもしれない。", "あしたはあめ"),
+            "明日はあめかもしれない。"
+        );
+        assert_eq!(
+            echo_free_context("今日はいい", "てんきですね"),
+            "今日はいい"
+        );
+    }
+
+    #[test]
+    fn echo_context_ignores_short_readings() {
+        // A short reading matches by coincidence too easily; leave the
+        // context alone.
+        assert_eq!(echo_free_context("てんきですね", "てんき"), "てんきですね");
+    }
+
+    #[test]
+    fn echo_context_matches_katakana_echoes() {
+        assert_eq!(echo_free_context("アシタハアメダ", "あしたはあめ"), "");
+    }
+
+    #[test]
+    fn echo_context_keeps_unrelated_kana_sentences() {
+        assert_eq!(
+            echo_free_context("そうですね。", "あしたはあめかな"),
+            "そうですね。"
+        );
     }
 }
