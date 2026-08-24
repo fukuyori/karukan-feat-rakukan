@@ -156,6 +156,9 @@ pub struct LearningSettings {
     /// cache; longer conversion results (e.g. whole live-converted
     /// sentences) are not learned
     pub max_surface_chars: usize,
+    /// Days after which an entry unused since its last selection is dropped
+    /// when the cache is loaded. 0 disables the expiry (default)
+    pub stale_days: u32,
 }
 
 impl Default for Settings {
@@ -385,6 +388,24 @@ max_surface_chars = 10
         assert_eq!(settings.learning.max_surface_chars, 10);
         assert!(settings.learning.enabled);
         assert_eq!(settings.learning.max_entries, 10000);
+        // stale_days defaults to 0 = expiry disabled.
+        assert_eq!(settings.learning.stale_days, 0);
+    }
+
+    #[test]
+    fn test_learning_stale_days_config() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(
+            file,
+            r#"
+[learning]
+stale_days = 180
+"#
+        )
+        .unwrap();
+
+        let settings = Settings::load_from(file.path()).unwrap();
+        assert_eq!(settings.learning.stale_days, 180);
     }
 
     #[test]

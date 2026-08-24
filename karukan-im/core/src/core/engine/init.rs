@@ -114,7 +114,7 @@ impl InputMethodEngine {
             LearningConfig {
                 max_entries: settings.learning.max_entries,
                 max_surface_chars: settings.learning.max_surface_chars,
-                ..LearningConfig::default()
+                stale_days: settings.learning.stale_days,
             },
         );
 
