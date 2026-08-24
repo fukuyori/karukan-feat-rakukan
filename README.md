@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="icon.png" width="128" alt="karukan" />
   <h1>Karukan feat. Rakukan</h1>
   <p>Linux・macOS向け日本語入力システム — ニューラルかな漢字変換エンジン</p>
   <p><a href="https://github.com/togatoga/karukan">togatoga/karukan</a> の派生リポジトリ — Windows向け実装 <a href="https://github.com/fukuyori/rakukan">Rakukan</a> の知見から有効な機能だけを選択移植</p>
