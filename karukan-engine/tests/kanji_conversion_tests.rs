@@ -169,8 +169,8 @@ mod llamacpp_tests {
 
         let candidates: Vec<String> = results
             .iter()
-            .filter_map(|(t, _)| {
-                let s = clean_output(&model.decode(t, true).ok()?);
+            .filter_map(|c| {
+                let s = clean_output(&model.decode(&c.tokens, true).ok()?);
                 if s.is_empty() { None } else { Some(s) }
             })
             .collect();
@@ -206,8 +206,8 @@ mod llamacpp_tests {
 
             let candidates: Vec<String> = results
                 .iter()
-                .filter_map(|(t, _)| {
-                    let s = clean_output(&model.decode(t, true).ok()?);
+                .filter_map(|c| {
+                    let s = clean_output(&model.decode(&c.tokens, true).ok()?);
                     if s.is_empty() { None } else { Some(s) }
                 })
                 .collect();
@@ -237,7 +237,7 @@ mod llamacpp_tests {
             .generate_beam_search(&tokens, 20, eos, 5)
             .expect("Beam search failed");
 
-        let scores: Vec<f32> = results.iter().map(|(_, s)| *s).collect();
+        let scores: Vec<f32> = results.iter().map(|c| c.score).collect();
 
         for i in 1..scores.len() {
             assert!(
@@ -437,15 +437,18 @@ mod llamacpp_tests {
 
         println!("Beam search returned {} results", results.len());
 
-        for (i, (output_tokens, score)) in results.iter().enumerate() {
-            println!("Result {}: tokens={:?}, score={}", i, output_tokens, score);
+        for (i, c) in results.iter().enumerate() {
+            println!(
+                "Result {}: tokens={:?}, score={}, finished={}",
+                i, c.tokens, c.score, c.finished
+            );
 
-            if output_tokens.is_empty() {
+            if c.tokens.is_empty() {
                 println!("  -> Empty tokens, skipping decode");
                 continue;
             }
 
-            match model.decode(output_tokens, true) {
+            match model.decode(&c.tokens, true) {
                 Ok(text) => println!("  -> Decoded: '{}'", text),
                 Err(e) => println!("  -> Decode error: {}", e),
             }

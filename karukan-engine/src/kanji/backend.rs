@@ -169,8 +169,8 @@ impl KanaKanjiConverter {
                 .model
                 .generate_beam_search(&tokens, budget, eos, num_candidates)?;
 
-            for (output_tokens, _score) in results {
-                let text = self.model.decode(&output_tokens, true)?;
+            for c in results {
+                let text = self.model.decode(&c.tokens, true)?;
                 let clean = clean_model_output(&text);
 
                 if !clean.is_empty() && !candidates.contains(&clean) {

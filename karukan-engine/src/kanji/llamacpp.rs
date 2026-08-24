@@ -101,6 +101,17 @@ struct BeamState {
     score: f32,
 }
 
+/// A beam search result: the generated tokens, the cumulative log-prob
+/// score, and whether the beam reached EOS.
+#[derive(Debug, Clone)]
+pub struct BeamCandidate {
+    pub tokens: Vec<LlamaToken>,
+    pub score: f32,
+    /// True when the beam terminated at EOS. False means the generation
+    /// budget ran out first and the text may be cut mid-output.
+    pub finished: bool,
+}
+
 /// llama.cpp based GPT-2 model for GGUF inference
 pub struct LlamaCppModel {
     model: LlamaModel,
@@ -442,7 +453,7 @@ impl LlamaCppModel {
         max_new_tokens: usize,
         eos_token_id: Option<i32>,
         beam_size: usize,
-    ) -> Result<Vec<(Vec<LlamaToken>, f32)>> {
+    ) -> Result<Vec<BeamCandidate>> {
         // max_new_tokens == 0 means "generate nothing": return before paying
         // for the prompt decode instead of emitting one-token pseudo-beams.
         if beam_size == 0 || max_new_tokens == 0 || input_tokens.is_empty() {
@@ -563,7 +574,7 @@ impl LlamaCppModel {
         max_new_tokens: usize,
         eos_token_id: Option<i32>,
         beam_size: usize,
-    ) -> Result<Vec<(Vec<LlamaToken>, f32)>> {
+    ) -> Result<Vec<BeamCandidate>> {
         // Same degenerate-input contract as the fast path.
         if beam_size == 0 || max_new_tokens == 0 || input_tokens.is_empty() {
             return Ok(Vec::new());
@@ -730,18 +741,27 @@ impl LlamaCppModel {
     }
 
     /// Final candidate list: every beam, best score first, capped at
-    /// `beam_size`.
+    /// `beam_size`. EOS-terminated and budget-truncated beams are both
+    /// returned, distinguished by [`BeamCandidate::finished`] — whether
+    /// truncated output is usable is the caller's policy.
     fn finalize_beams(
         finished: Vec<BeamState>,
         active: Vec<BeamState>,
         beam_size: usize,
-    ) -> Vec<(Vec<LlamaToken>, f32)> {
-        let mut all: Vec<(Vec<LlamaToken>, f32)> = finished
+    ) -> Vec<BeamCandidate> {
+        let tag = |finished: bool| {
+            move |b: BeamState| BeamCandidate {
+                tokens: b.tokens,
+                score: b.score,
+                finished,
+            }
+        };
+        let mut all: Vec<BeamCandidate> = finished
             .into_iter()
-            .chain(active)
-            .map(|b| (b.tokens, b.score))
+            .map(tag(true))
+            .chain(active.into_iter().map(tag(false)))
             .collect();
-        all.sort_by(|a, b| b.1.total_cmp(&a.1));
+        all.sort_by(|a, b| b.score.total_cmp(&a.score));
         all.truncate(beam_size);
         all
     }
@@ -1018,10 +1038,15 @@ mod beam_search_tests {
                     .generate_beam_search_full_eval(&tokens, 20, eos, beam_size)
                     .expect("reference beam search failed");
 
-                let decode = |results: &[(Vec<LlamaToken>, f32)]| -> Vec<String> {
+                let decode = |results: &[BeamCandidate]| -> Vec<(String, bool)> {
                     results
                         .iter()
-                        .map(|(t, _)| model.decode(t, true).unwrap_or_default())
+                        .map(|c| {
+                            (
+                                model.decode(&c.tokens, true).unwrap_or_default(),
+                                c.finished,
+                            )
+                        })
                         .collect()
                 };
                 assert_eq!(
