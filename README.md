@@ -97,6 +97,13 @@ cd karukan-feat-rakukan
 
 必要な依存パッケージが不足している場合は、インストーラが `apt` のコマンドを提示して停止します。手動での手順は [karukan-fcitx5 の README](karukan-im/fcitx5/README.md#install) を参照してください。
 
+**配布用パッケージ(.deb)** は `scripts/build-deb.sh` でビルドできます(CPU 固有命令なしの汎用ビルド、約6MB。システム辞書は別途 [docs/dictionary.md](docs/dictionary.md) の手順で配置):
+
+```bash
+scripts/build-deb.sh
+sudo apt install ./dist/karukan-fcitx5_*.deb
+```
+
 - **macOS**: [karukan-macos の README](karukan-im/macos/README.md) を参照
 
 ## ドキュメント
