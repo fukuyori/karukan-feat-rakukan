@@ -97,6 +97,7 @@ IME本体(コアエンジン + 各プラットフォームのフロントエン�
 - [Chunk](docs/chunking.md) — 変換が Chunk に区切られる場所と、自分で区切って表示を固定する方法
 - [記号・半角全角](docs/symbols.md) — 句読点や括弧の種類、記号・数字・英字の幅、スペースの設定
 - [Rakukan 機能の選択移植計画](docs/rakukan-porting-plan.md) — 派生リポジトリの位置づけ、移植範囲、各フェーズの設計と検証条件
+- [Rakukan 移植の実装解説](docs/rakukan-implementation-notes.md) — 全改修の技術解説（問題・設計判断・実装詳細・挙動変化・テスト）。上流へ提案する際に人間が内容を完全に理解・説明できる粒度で記載
 - [基準出力](docs/baselines/README.md) — 変換品質変更の比較に使う異常入力ケース集と基準出力
 
 ## 開発
