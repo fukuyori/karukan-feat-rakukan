@@ -18,8 +18,8 @@ command -v ffmpeg >/dev/null 2>&1 || {
 
 INPUT="${1:-}"
 if [ -z "$INPUT" ]; then
-    INPUT="$(ls -t "$HOME/Videos/Screencasts"/*.webm 2>/dev/null | head -1 || true)"
-    [ -n "$INPUT" ] || { echo "録画が見つかりません (~/Videos/Screencasts/*.webm)" >&2; exit 1; }
+    INPUT="$(ls -t "$HOME/Videos/Screencasts"/*.{webm,mp4} 2>/dev/null | head -1 || true)"
+    [ -n "$INPUT" ] || { echo "録画が見つかりません (~/Videos/Screencasts/*.webm|*.mp4)" >&2; exit 1; }
 fi
 echo "==> 入力: $INPUT"
 
