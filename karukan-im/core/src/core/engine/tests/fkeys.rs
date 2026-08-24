@@ -144,6 +144,108 @@ fn fkeys_pass_through_in_empty_state() {
 }
 
 #[test]
+fn f10_converts_typed_keys_to_half_alnum() {
+    // わたし was typed as watasi: F10 gives back the keystrokes, not a
+    // romanization of the kana.
+    let mut engine = InputMethodEngine::new();
+    engine.converters.kanji = None;
+
+    for ch in "watasi".chars() {
+        engine.process_key(&press(ch));
+    }
+    assert_eq!(engine.preedit().unwrap().text(), "わたし");
+
+    engine.process_key(&press_key(Keysym::F10));
+    assert!(matches!(engine.state(), InputState::Conversion { .. }));
+    assert_eq!(selected_text(&engine), "watasi");
+}
+
+#[test]
+fn f9_converts_typed_keys_to_full_alnum() {
+    let mut engine = InputMethodEngine::new();
+    engine.converters.kanji = None;
+
+    for ch in "spam".chars() {
+        engine.process_key(&press(ch));
+    }
+    engine.process_key(&press_key(Keysym::F9));
+    assert_eq!(selected_text(&engine), "ｓｐａｍ");
+}
+
+#[test]
+fn f10_repeat_cycles_case() {
+    let mut engine = InputMethodEngine::new();
+    engine.converters.kanji = None;
+
+    for ch in "spam".chars() {
+        engine.process_key(&press(ch));
+    }
+    engine.process_key(&press_key(Keysym::F10));
+    assert_eq!(selected_text(&engine), "spam");
+    engine.process_key(&press_key(Keysym::F10));
+    assert_eq!(selected_text(&engine), "SPAM");
+    engine.process_key(&press_key(Keysym::F10));
+    assert_eq!(selected_text(&engine), "Spam");
+    // The cycle wraps.
+    engine.process_key(&press_key(Keysym::F10));
+    assert_eq!(selected_text(&engine), "spam");
+}
+
+#[test]
+fn f9_after_f10_keeps_case_and_changes_width() {
+    let mut engine = InputMethodEngine::new();
+    engine.converters.kanji = None;
+
+    for ch in "spam".chars() {
+        engine.process_key(&press(ch));
+    }
+    engine.process_key(&press_key(Keysym::F10));
+    engine.process_key(&press_key(Keysym::F10));
+    assert_eq!(selected_text(&engine), "SPAM");
+    engine.process_key(&press_key(Keysym::F9));
+    assert_eq!(selected_text(&engine), "ＳＰＡＭ");
+}
+
+#[test]
+fn f10_covers_passthrough_and_symbol_keystrokes() {
+    // よろしく、 typed as yorosiku, — F10 reproduces the keys including
+    // the comma that fired the punctuation rule.
+    let mut engine = InputMethodEngine::new();
+    engine.converters.kanji = None;
+
+    for ch in "yorosiku,".chars() {
+        engine.process_key(&press(ch));
+    }
+    engine.process_key(&press_key(Keysym::F10));
+    assert_eq!(selected_text(&engine), "yorosiku,");
+}
+
+#[test]
+fn f10_commit_records_learning_under_the_reading() {
+    let mut engine = InputMethodEngine::new();
+    engine.converters.kanji = None;
+    engine.learning = Some(LearningCache::new(LearningConfig::default()));
+
+    for ch in "spam".chars() {
+        engine.process_key(&press(ch));
+    }
+    engine.process_key(&press_key(Keysym::F10));
+    let result = engine.process_key(&press_key(Keysym::RETURN));
+
+    let committed = result.actions.iter().find_map(|a| match a {
+        EngineAction::Commit(text) => Some(text.clone()),
+        _ => None,
+    });
+    assert_eq!(committed.as_deref(), Some("spam"));
+    // The settled reading of the keys s,p,a,m is sぱm (a lone `s` never
+    // becomes kana); the learning entry lands under that key.
+    assert_eq!(
+        engine.learning.as_ref().unwrap().lookup("sぱm")[0].0,
+        "spam"
+    );
+}
+
+#[test]
 fn fkeys_are_inert_in_emoji_mode() {
     let mut engine = InputMethodEngine::new();
     engine.converters.kanji = None;

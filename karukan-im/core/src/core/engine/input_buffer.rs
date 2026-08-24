@@ -33,24 +33,41 @@
 use karukan_engine::RomajiConverter;
 
 /// One display character of the composition.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Element {
     /// A keystroke not yet consumed by a conversion rule
     Romaji(char),
     /// A settled character: fired rule output (`ko` → こ), passthrough
     /// (`1`), or direct input — excluded from romaji evaluation
-    Converted(char),
+    Converted {
+        ch: char,
+        /// The keystrokes that produced this character (mozc's raw input,
+        /// what F9/F10 convert back to). A rule firing into several display
+        /// characters (`kya` → きゃ) stores the whole group's keystrokes on
+        /// its first character and leaves the rest empty, so concatenating
+        /// over the elements reproduces the typed keys. Direct input and
+        /// passthrough store themselves.
+        raw: String,
+    },
 }
 
 impl Element {
     fn ch(&self) -> char {
         match self {
-            Element::Romaji(ch) | Element::Converted(ch) => *ch,
+            Element::Romaji(ch) => *ch,
+            Element::Converted { ch, .. } => *ch,
         }
     }
 
     fn is_romaji(&self) -> bool {
         matches!(self, Element::Romaji(_))
+    }
+
+    fn direct(ch: char) -> Element {
+        Element::Converted {
+            ch,
+            raw: ch.to_string(),
+        }
     }
 }
 
@@ -99,7 +116,7 @@ impl InputBuffer {
     /// Record a direct-input keystroke (alphabet/emoji mode) at the caret,
     /// settled as-is.
     pub fn push_direct(&mut self, ch: char) {
-        self.elements.insert(self.cursor, Element::Converted(ch));
+        self.elements.insert(self.cursor, Element::direct(ch));
         self.cursor += 1;
     }
 
@@ -108,10 +125,8 @@ impl InputBuffer {
     #[cfg(test)]
     pub fn insert(&mut self, text: &str) {
         let count = text.chars().count();
-        self.elements.splice(
-            self.cursor..self.cursor,
-            text.chars().map(Element::Converted),
-        );
+        self.elements
+            .splice(self.cursor..self.cursor, text.chars().map(Element::direct));
         self.cursor += count;
     }
 
@@ -194,7 +209,7 @@ impl InputBuffer {
         for element in &self.elements {
             match element {
                 Element::Romaji(ch) => run.push(*ch),
-                Element::Converted(ch) => {
+                Element::Converted { ch, .. } => {
                     if !run.is_empty() {
                         reading.push_str(&romaji.convert_flush(&run));
                         run.clear();
@@ -235,14 +250,35 @@ impl InputBuffer {
     }
 
     /// Convert every settled element to katakana permanently. Called when
-    /// leaving katakana mode so the preedit doesn't revert.
+    /// leaving katakana mode so the preedit doesn't revert. The raw
+    /// keystrokes are untouched — the same keys produced the katakana.
     pub fn bake_katakana(&mut self) {
         for element in &mut self.elements {
-            if let Element::Converted(ch) = element {
+            if let Element::Converted { ch, .. } = element {
                 let katakana = karukan_engine::hiragana_to_katakana(&ch.to_string());
                 *ch = katakana.chars().next().unwrap_or(*ch);
             }
         }
+    }
+
+    /// The keystrokes that produced the composition, in order — mozc's raw
+    /// input, what F9/F10 convert back to. Fired rules contribute the keys
+    /// that fired them (きゃ → `kya`), passthrough and direct input
+    /// contribute themselves, live keystrokes ride as-is.
+    ///
+    /// Best-effort under partial edits: deleting some but not all display
+    /// characters of one fired rule leaves the group's keys attached to its
+    /// first character (or drops them with it), so the raw text can then
+    /// diverge from what typing the remaining text fresh would give.
+    pub fn raw_text(&self) -> String {
+        let mut out = String::new();
+        for element in &self.elements {
+            match element {
+                Element::Romaji(ch) => out.push(*ch),
+                Element::Converted { raw, .. } => out.push_str(raw),
+            }
+        }
+        out
     }
 
     /// Move the caret to a display position (also its element index).
@@ -313,36 +349,213 @@ fn flush_run(out: &mut Vec<Element>, run: &mut String, romaji: &RomajiConverter)
     if run.is_empty() {
         return;
     }
-    out.extend(romaji.convert_flush(run).chars().map(Element::Converted));
+    out.extend(evaluate_keystrokes(run, romaji, true));
     run.clear();
 }
 
-/// Evaluate a run of romaji keystrokes: convert the whole run and record
-/// one element per output character.
+/// Evaluate a run of romaji keystrokes: convert the run and record one
+/// element per output character (see [`evaluate_keystrokes`]).
+fn evaluate_run(run: &str, romaji: &RomajiConverter) -> Vec<Element> {
+    evaluate_keystrokes(run, romaji, false)
+}
+
+/// Evaluate a run of romaji keystrokes, replaying them one at a time so
+/// each fired output knows which keystrokes produced it (the raw input
+/// F9/F10 convert back to).
 ///
 /// Rule outputs never contain ASCII (see the converter's contract), so an
 /// ASCII character in the output is a keystroke that passed through: it
 /// stays live (`Romaji`) if it can still begin a rule (`ykt` → BS → `o`
 /// → 「yこ」) and settles otherwise (`1`). Everything else is a fired
-/// rule's output, settled for good. The trailing pending stays `Romaji`
-/// per keystroke.
+/// rule's output, settled for good. With `flush` false the trailing
+/// pending stays `Romaji` per keystroke; with `flush` true it is forced
+/// through the flush table and settles (`ltu` → っ, a stranded `k`
+/// literally).
 ///
 /// Settling is where the configured width applies, after the classification
 /// above: a character settles at the width in force when it was typed, so
 /// switching to alphabet input mid-word (`（` then Shift+A) leaves what is
 /// already settled alone.
-fn evaluate_run(run: &str, romaji: &RomajiConverter) -> Vec<Element> {
-    let converted = romaji.convert(run);
-    converted
-        .text
-        .chars()
-        .map(|c| {
-            if romaji.starts_rule(c) {
-                Element::Romaji(c)
-            } else {
-                Element::Converted(romaji.width().apply(c))
+fn evaluate_keystrokes(run: &str, romaji: &RomajiConverter, flush: bool) -> Vec<Element> {
+    let mut elements: Vec<Element> = Vec::new();
+    // Keystrokes since the last output growth: when the converter emits new
+    // characters, these are the keys that produced them.
+    let mut group_raw = String::new();
+    let mut prefix = String::new();
+    let mut emitted = 0usize;
+    let mut pending = String::new();
+    for key in run.chars() {
+        prefix.push(key);
+        group_raw.push(key);
+        let converted = romaji.convert(&prefix);
+        let text: Vec<char> = converted.text.chars().collect();
+        if text.len() > emitted {
+            // The emission consumed group_raw minus the keystrokes still
+            // pending afterwards — the pending is always a tail of the
+            // accumulated keys, since the converter works left to right.
+            let total = group_raw.chars().count();
+            let keep = converted.pending.chars().count();
+            let split = total.saturating_sub(keep);
+            let mut consumed: String = group_raw.chars().take(split).collect();
+            let rest: String = group_raw.chars().skip(split).collect();
+            push_batch(
+                &mut elements,
+                &text[emitted..],
+                &mut consumed,
+                romaji,
+                false,
+            );
+            group_raw = rest;
+            emitted = text.len();
+        }
+        pending = converted.pending;
+    }
+    if flush {
+        let flushed: Vec<char> = romaji.flush_pending(&pending).chars().collect();
+        if !flushed.is_empty() {
+            // group_raw holds exactly the pending keystrokes at this point.
+            push_batch(&mut elements, &flushed, &mut group_raw, romaji, true);
+        }
+    } else {
+        elements.extend(pending.chars().map(Element::Romaji));
+    }
+    elements
+}
+
+/// Record one batch of newly emitted characters, attributing `group_raw`
+/// (the keystrokes since the last emission) to them.
+///
+/// ASCII characters in the output are keystrokes emitted verbatim, so they
+/// align one-to-one with their identical characters in `group_raw`; each is
+/// its own raw. A maximal non-ASCII run is a fired rule's output and
+/// carries the keystrokes between the surrounding alignment points on its
+/// first character, the rest empty. `settle_all` forces even rule-starting
+/// ASCII to settle (the flush path).
+fn push_batch(
+    elements: &mut Vec<Element>,
+    batch: &[char],
+    group_raw: &mut String,
+    romaji: &RomajiConverter,
+    settle_all: bool,
+) {
+    let raw: Vec<char> = group_raw.chars().collect();
+    let mut r = 0; // consumed prefix of `raw`
+    let mut i = 0;
+    while i < batch.len() {
+        let c = batch[i];
+        if c.is_ascii() {
+            // A passthrough keystroke: aligned with itself in the raw.
+            if r < raw.len() && raw[r] == c {
+                r += 1;
             }
-        })
-        .chain(converted.pending.chars().map(Element::Romaji))
-        .collect()
+            if !settle_all && romaji.starts_rule(c) {
+                elements.push(Element::Romaji(c));
+            } else {
+                elements.push(Element::Converted {
+                    ch: romaji.width().apply(c),
+                    raw: c.to_string(),
+                });
+            }
+            i += 1;
+            continue;
+        }
+        // Maximal fired (non-ASCII) run: consumes the keystrokes up to the
+        // next passthrough's alignment point (or all remaining ones).
+        let mut j = i;
+        while j < batch.len() && !batch[j].is_ascii() {
+            j += 1;
+        }
+        let end = if j < batch.len() {
+            raw[r..]
+                .iter()
+                .position(|&k| k == batch[j])
+                .map(|p| r + p)
+                .unwrap_or(raw.len())
+        } else {
+            raw.len()
+        };
+        let run_raw: String = raw[r..end].iter().collect();
+        r = end;
+        for (offset, &k) in batch[i..j].iter().enumerate() {
+            elements.push(Element::Converted {
+                ch: romaji.width().apply(k),
+                raw: if offset == 0 {
+                    run_raw.clone()
+                } else {
+                    String::new()
+                },
+            });
+        }
+        i = j;
+    }
+    group_raw.clear();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn typed(keys: &str) -> InputBuffer {
+        let romaji = RomajiConverter::new();
+        let mut buf = InputBuffer::new();
+        for ch in keys.chars() {
+            buf.push_romaji(ch, &romaji);
+        }
+        buf
+    }
+
+    #[test]
+    fn raw_text_reproduces_typed_keys() {
+        assert_eq!(typed("kya").raw_text(), "kya");
+        assert_eq!(typed("wasedad").raw_text(), "wasedad");
+        assert_eq!(typed("konnnitiha").raw_text(), "konnnitiha");
+    }
+
+    #[test]
+    fn raw_text_keeps_passthrough_keystrokes() {
+        // `y` stays live, `1` passes through, `ka` fires.
+        let buf = typed("y1ka");
+        assert_eq!(buf.display(), "y1か");
+        assert_eq!(buf.raw_text(), "y1ka");
+    }
+
+    #[test]
+    fn raw_text_keeps_symbol_rule_keystrokes() {
+        // `,` fires the punctuation rule (、by default).
+        let buf = typed("a,");
+        assert_eq!(buf.raw_text(), "a,");
+    }
+
+    #[test]
+    fn raw_text_covers_direct_input_verbatim() {
+        let mut buf = InputBuffer::new();
+        buf.push_direct('A');
+        buf.push_direct('b');
+        assert_eq!(buf.raw_text(), "Ab");
+    }
+
+    #[test]
+    fn raw_text_survives_settle_and_bake() {
+        let romaji = RomajiConverter::new();
+        let mut buf = typed("kyoltu");
+        buf.settle_romaji(&romaji);
+        assert_eq!(buf.display(), "きょっ");
+        assert_eq!(buf.raw_text(), "kyoltu");
+        buf.bake_katakana();
+        assert_eq!(buf.display(), "キョッ");
+        assert_eq!(buf.raw_text(), "kyoltu");
+    }
+
+    #[test]
+    fn raw_text_after_partial_group_deletion_is_best_effort() {
+        // Deleting ゃ from きゃ leaves the group's keys on き: the raw
+        // text then reads "kya" for a buffer displaying き. Documented
+        // best-effort behavior, pinned here so a change is deliberate.
+        let romaji = RomajiConverter::new();
+        let mut buf = typed("kya");
+        assert_eq!(buf.display(), "きゃ");
+        buf.backspace(&romaji);
+        assert_eq!(buf.display(), "き");
+        assert_eq!(buf.raw_text(), "kya");
+    }
 }
