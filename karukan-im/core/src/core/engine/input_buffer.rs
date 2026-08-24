@@ -286,6 +286,17 @@ impl InputBuffer {
         self.cursor = pos.min(self.elements.len());
     }
 
+    /// Remove the first `n` display characters. The caret keeps its
+    /// position relative to the remaining text. Used by the range commit,
+    /// which commits the converted head and keeps composing the rest —
+    /// call after `settle_romaji` so elements and reading characters
+    /// correspond one to one.
+    pub fn drain_prefix(&mut self, n: usize) {
+        let n = n.min(self.elements.len());
+        self.elements.drain(..n);
+        self.cursor = self.cursor.saturating_sub(n);
+    }
+
     // --- Evaluation: views derived from the record ------------------------
 
     /// Display caret position (== the element index of the caret).
@@ -544,6 +555,31 @@ mod tests {
         buf.bake_katakana();
         assert_eq!(buf.display(), "キョッ");
         assert_eq!(buf.raw_text(), "kyoltu");
+    }
+
+    #[test]
+    fn drain_prefix_removes_head_and_keeps_caret_relative() {
+        let romaji = RomajiConverter::new();
+        let mut buf = typed("wasedadaigaku");
+        buf.settle_romaji(&romaji);
+        assert_eq!(buf.display(), "わせだだいがく");
+        assert_eq!(buf.cursor(), 7);
+
+        buf.drain_prefix(3); // commit わせだ, keep だいがく
+        assert_eq!(buf.display(), "だいがく");
+        assert_eq!(buf.cursor(), 4);
+        // The remainder keeps its raw keystrokes.
+        assert_eq!(buf.raw_text(), "daigaku");
+    }
+
+    #[test]
+    fn drain_prefix_clamps_and_empties() {
+        let romaji = RomajiConverter::new();
+        let mut buf = typed("ai");
+        buf.settle_romaji(&romaji);
+        buf.drain_prefix(10);
+        assert!(buf.is_empty());
+        assert_eq!(buf.cursor(), 0);
     }
 
     #[test]

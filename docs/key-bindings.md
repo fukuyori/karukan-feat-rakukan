@@ -14,6 +14,7 @@ Karukan のキーバインド一覧です。共通キーバインドは Linux (f
 | Backspace | 1文字削除 |
 | Delete | カーソル位置の文字を削除 |
 | ← → | カーソル移動 |
+| Shift+→ / Shift+← | 読みの先頭から選択範囲を伸ばす / 縮める（範囲指定変換）。Space で選択範囲だけを変換、Enter で確定すると残りの読みはそのまま入力が続く、Escape で解除 |
 | Home / End | カーソルを先頭 / 末尾に移動 |
 | Ctrl+B / Ctrl+F | カーソル移動（Emacs風 ← →） |
 | Ctrl+A / Ctrl+E | カーソルを先頭 / 末尾に移動（Emacs風） |
