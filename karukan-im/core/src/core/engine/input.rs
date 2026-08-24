@@ -370,27 +370,34 @@ impl InputMethodEngine {
     /// Settles pending romaji as a side effect. Emoji mode commits the first
     /// emoji candidate (falling back to the literal query), katakana mode
     /// commits katakana, live conversion commits the converted text.
-    pub(super) fn resolve_composing_commit(&mut self) -> (String, String) {
+    pub(super) fn resolve_composing_commit(&mut self) -> (String, String, bool) {
         // Resolve the live text before settling: it needs the pending run
         let live_text = self.live_text_with_pending();
         self.settle_romaji();
         let reading = self.input_buf.reading();
-        let text = if self.mode.current() == InputMode::Emoji {
-            self.first_emoji_candidate(&reading)
-                .unwrap_or_else(|| reading.clone())
+        // The third value is whether this commit should be learned: a live
+        // conversion commit accepts the model's guess without choosing it,
+        // so the Model source policy runs with explicit = false. Kana and
+        // katakana commits are learned (the emoji branch is cut off later
+        // by record_learning's mode check).
+        let (text, learn) = if self.mode.current() == InputMode::Emoji {
+            let text = self
+                .first_emoji_candidate(&reading)
+                .unwrap_or_else(|| reading.clone());
+            (text, false)
         } else if self.mode.current() == InputMode::Katakana {
-            karukan_engine::hiragana_to_katakana(&reading)
+            (karukan_engine::hiragana_to_katakana(&reading), true)
         } else if !live_text.is_empty() {
-            live_text
+            (live_text, CandidateSource::Model.records_learning(false))
         } else {
-            reading.clone()
+            (reading.clone(), true)
         };
-        (reading, text)
+        (reading, text, learn)
     }
 
     /// Commit the current composition (Enter).
     pub(super) fn commit_composing(&mut self) -> EngineResult {
-        let (reading, text) = self.resolve_composing_commit();
+        let (reading, text, learn) = self.resolve_composing_commit();
 
         if text.is_empty() {
             self.end_composition();
@@ -399,7 +406,9 @@ impl InputMethodEngine {
                 .with_action(EngineAction::HideAuxText);
         }
 
-        self.record_learning(&reading, &text);
+        if learn {
+            self.record_learning(&reading, &text);
+        }
         self.end_composition();
 
         // HideCandidates is required here: the auto-suggest/live-conversion

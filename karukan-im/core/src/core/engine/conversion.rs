@@ -666,8 +666,11 @@ impl InputMethodEngine {
         out
     }
 
-    /// Get selected text and reading from conversion state, or None if not in conversion
-    pub(super) fn selected_conversion_info(&self) -> Option<(String, Option<String>)> {
+    /// Get selected text, reading, and source from conversion state, or
+    /// None if not in conversion.
+    pub(super) fn selected_conversion_info(
+        &self,
+    ) -> Option<(String, Option<String>, Option<CandidateSource>)> {
         match &self.state {
             InputState::Conversion {
                 candidates,
@@ -678,8 +681,9 @@ impl InputMethodEngine {
                 // as its preedit, so that is what committing produces —
                 // never an empty commit that would eat the composition.
                 let text = candidates.selected_text().unwrap_or(reading).to_string();
+                let source = candidates.selected().and_then(|c| c.source);
                 let reading = candidates.selected().and_then(|c| c.reading.clone());
-                Some((text, reading))
+                Some((text, reading, source))
             }
             _ => None,
         }
@@ -698,9 +702,19 @@ impl InputMethodEngine {
     }
 
     /// Record the committed conversion in the learning cache and end the
-    /// composition.
-    pub(super) fn finish_conversion(&mut self, text: &str, reading: &Option<String>) {
-        if let Some(reading) = reading {
+    /// composition. Committing from the conversion state is an explicit
+    /// choice — the candidate window was open — so the source policy runs
+    /// with `explicit = true`; a candidate without a source (the raw
+    /// reading of an empty filtered view) is a plain kana commit and is
+    /// learned like one.
+    pub(super) fn finish_conversion(
+        &mut self,
+        text: &str,
+        reading: &Option<String>,
+        source: Option<CandidateSource>,
+    ) {
+        let learn = source.is_none_or(|s| s.records_learning(true));
+        if learn && let Some(reading) = reading {
             self.record_learning(reading, text);
         }
         self.end_composition();
@@ -708,7 +722,7 @@ impl InputMethodEngine {
 
     /// Commit the current conversion
     fn commit_conversion(&mut self) -> EngineResult {
-        let Some((text, reading)) = self.selected_conversion_info() else {
+        let Some((text, reading, source)) = self.selected_conversion_info() else {
             return EngineResult::not_consumed();
         };
 
@@ -716,7 +730,7 @@ impl InputMethodEngine {
             return EngineResult::consumed();
         }
 
-        self.finish_conversion(&text, &reading);
+        self.finish_conversion(&text, &reading, source);
 
         EngineResult::consumed()
             .with_action(EngineAction::HideCandidates)

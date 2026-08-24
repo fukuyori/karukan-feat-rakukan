@@ -240,7 +240,7 @@ async fn run_view(
         // Safety: len() == 1 guarantees next() returns Some
         loaded.into_iter().next().expect("single dictionary loaded")
     } else {
-        Dictionary::merge(loaded)?.expect("at least one dictionary loaded")
+        Dictionary::merge(&loaded)?.expect("at least one dictionary loaded")
     };
 
     eprintln!("Dictionary loaded.");

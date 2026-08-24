@@ -16,6 +16,7 @@ mod mode;
 mod model;
 mod strategy;
 mod types;
+mod user_dicts;
 
 pub use types::*;
 
@@ -177,6 +178,12 @@ pub struct InputMethodEngine {
     /// Drained by `poll_loaded_models` at the top of `process_key`; until
     /// then (or if loading failed) the engine runs dictionary/kana-only.
     model_loading: Option<std::sync::mpsc::Receiver<init::LoadedConverters>>,
+    /// Watches `user_dicts/` for edits so the user dictionary reloads
+    /// without an IME restart. Polled (throttled) by `poll_user_dicts` at
+    /// the top of `process_key`.
+    user_dict_watcher: Option<user_dicts::UserDictWatcher>,
+    /// When the watcher last ran, for the poll throttle.
+    user_dicts_checked: Option<std::time::Instant>,
 }
 
 impl InputMethodEngine {
@@ -204,6 +211,8 @@ impl InputMethodEngine {
             dicts: Dictionaries::default(),
             learning: None,
             model_loading: None,
+            user_dict_watcher: None,
+            user_dicts_checked: None,
         }
     }
 
@@ -331,6 +340,7 @@ impl InputMethodEngine {
         };
         let text = selected.text.clone();
         let reading = selected.reading.clone();
+        let source = selected.source;
         if text.is_empty() {
             return EngineResult::consumed();
         }
@@ -338,7 +348,7 @@ impl InputMethodEngine {
         // A suggestion always carries its reading; fall back to the buffer
         // so a candidate built without one still records under a key.
         let reading = reading.or_else(|| Some(self.input_buf.reading()));
-        self.finish_conversion(&text, &reading);
+        self.finish_conversion(&text, &reading, source);
 
         EngineResult::consumed()
             .with_action(EngineAction::Commit(text))
@@ -549,10 +559,32 @@ impl InputMethodEngine {
         CandidateList::new(settled)
     }
 
+    /// Reload the user dictionaries when their files changed. Throttled to
+    /// one stat pass per [`USER_DICT_CHECK_INTERVAL`], so the cost per
+    /// keystroke is at most a few `stat` calls every couple of seconds;
+    /// parsing runs only for files that actually changed.
+    pub(super) fn poll_user_dicts(&mut self) {
+        const USER_DICT_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+        let now = std::time::Instant::now();
+        if let Some(last) = self.user_dicts_checked
+            && now.duration_since(last) < USER_DICT_CHECK_INTERVAL
+        {
+            return;
+        }
+        self.user_dicts_checked = Some(now);
+        if let Some(watcher) = &mut self.user_dict_watcher
+            && let Some(merged) = watcher.refresh()
+        {
+            debug!("User dictionaries reloaded");
+            self.dicts.user = merged;
+        }
+    }
+
     /// Process a key event
     pub fn process_key(&mut self, key: &KeyEvent) -> EngineResult {
         // Install converters the background loader has finished; never blocks.
         self.poll_loaded_models();
+        self.poll_user_dicts();
 
         // Log modifier key events for debugging key mapping issues
         if key.keysym.is_modifier() {
@@ -635,16 +667,18 @@ impl InputMethodEngine {
         let text = match &self.state {
             InputState::Empty => String::new(),
             InputState::Composing { .. } => {
-                let (reading, text) = self.resolve_composing_commit();
-                self.record_learning(&reading, &text);
+                let (reading, text, learn) = self.resolve_composing_commit();
+                if learn {
+                    self.record_learning(&reading, &text);
+                }
                 self.end_composition();
                 text
             }
             InputState::Conversion { .. } => {
-                let (text, reading) = self
+                let (text, reading, source) = self
                     .selected_conversion_info()
                     .expect("state is Conversion");
-                self.finish_conversion(&text, &reading);
+                self.finish_conversion(&text, &reading, source);
                 text
             }
         };

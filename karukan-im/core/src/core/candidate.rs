@@ -55,6 +55,28 @@ impl CandidateSource {
     pub fn is_deletable(&self) -> bool {
         matches!(self, CandidateSource::Learning)
     }
+
+    /// Whether committing a candidate from this source is recorded in the
+    /// learning cache. `explicit` is true when the user picked the candidate
+    /// themselves (candidate window or numbered selection), false when the
+    /// commit accepted whatever was on display (a live-conversion commit).
+    ///
+    /// Fallback is never learned: it is the engine's own placeholder (the
+    /// raw reading when nothing produced a conversion), so recording it
+    /// would teach the cache the absence of a conversion. Model and
+    /// Rewriter output is learned only when explicitly chosen, so a wrong
+    /// first guess auto-accepted by a live commit cannot reinforce itself
+    /// into the top spot. Learning and the dictionaries carry surfaces a
+    /// person chose or authored, so they always record.
+    pub fn records_learning(&self, explicit: bool) -> bool {
+        match self {
+            CandidateSource::Fallback => false,
+            CandidateSource::Model | CandidateSource::Rewriter => explicit,
+            CandidateSource::Learning
+            | CandidateSource::UserDictionary
+            | CandidateSource::Dictionary => true,
+        }
+    }
 }
 
 /// A single conversion candidate.
@@ -293,6 +315,24 @@ impl Default for CandidateList {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn records_learning_policy() {
+        use CandidateSource::*;
+        // Fallback never records, however it was committed.
+        assert!(!Fallback.records_learning(true));
+        assert!(!Fallback.records_learning(false));
+        // Model and Rewriter record only when explicitly chosen.
+        assert!(Model.records_learning(true));
+        assert!(!Model.records_learning(false));
+        assert!(Rewriter.records_learning(true));
+        assert!(!Rewriter.records_learning(false));
+        // Learning and the dictionaries always record.
+        for source in [Learning, UserDictionary, Dictionary] {
+            assert!(source.records_learning(true));
+            assert!(source.records_learning(false));
+        }
+    }
 
     #[test]
     fn test_candidate_list_basic() {

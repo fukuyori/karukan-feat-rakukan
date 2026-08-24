@@ -520,23 +520,26 @@ impl Dictionary {
     ///
     /// Dictionaries earlier in the list have higher priority: their candidates
     /// appear first for the same reading. Returns `None` if the input is empty.
-    pub fn merge(dicts: Vec<Dictionary>) -> Result<Option<Self>> {
-        if dicts.is_empty() {
-            return Ok(None);
-        }
-
+    /// Borrows its inputs so callers can keep per-file dictionaries cached
+    /// and re-merge after a partial reload.
+    pub fn merge<'a>(dicts: impl IntoIterator<Item = &'a Dictionary>) -> Result<Option<Self>> {
         // Collect all entries, grouped by reading
         let mut merged: HashMap<String, Vec<Candidate>> = HashMap::new();
         let mut reading_order: Vec<String> = Vec::new();
+        let mut any = false;
 
         for dict in dicts {
-            for entry in dict.entries {
+            any = true;
+            for entry in &dict.entries {
                 if !merged.contains_key(&entry.reading) {
                     reading_order.push(entry.reading.clone());
                 }
-                let candidates = merged.entry(entry.reading).or_default();
-                extend_candidates_unique(candidates, entry.candidates);
+                let candidates = merged.entry(entry.reading.clone()).or_default();
+                extend_candidates_unique(candidates, entry.candidates.iter().cloned());
             }
+        }
+        if !any {
+            return Ok(None);
         }
 
         let mut entries: Vec<DictEntry> = reading_order
@@ -1085,7 +1088,7 @@ col0,col1,col2,4500,今日,col5,col6,col7,col8,col9,col10,キョウ
         let dict1 = Dictionary::build_from_mozc_tsv(f1.path()).unwrap();
         let dict2 = Dictionary::build_from_mozc_tsv(f2.path()).unwrap();
 
-        let merged = Dictionary::merge(vec![dict1, dict2]).unwrap().unwrap();
+        let merged = Dictionary::merge([&dict1, &dict2]).unwrap().unwrap();
 
         // "きょう" should have candidates from both, dict1 first
         let result = merged.exact_match_search("きょう").unwrap();
@@ -1101,7 +1104,7 @@ col0,col1,col2,4500,今日,col5,col6,col7,col8,col9,col10,キョウ
 
     #[test]
     fn test_merge_empty() {
-        let result = Dictionary::merge(vec![]).unwrap();
+        let result = Dictionary::merge([]).unwrap();
         assert!(result.is_none());
     }
 
