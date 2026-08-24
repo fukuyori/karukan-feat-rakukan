@@ -140,8 +140,17 @@ impl KanaKanjiConverter {
         // Convert hiragana to katakana (model expects katakana input)
         let katakana = hiragana_to_katakana(reading);
 
+        // A context sentence that echoes the input kana pulls the model
+        // toward echoing instead of converting; filter what the model sees.
+        // The caller's stored context (and any cache key built from it) is
+        // untouched.
+        let filtered_context = super::quality::echo_free_context(context, reading);
+        if filtered_context != context {
+            tracing::debug!("echo context filtered: {context:?} -> {filtered_context:?}");
+        }
+
         // Build prompt in jinen format
-        let prompt = build_jinen_prompt(&katakana, context);
+        let prompt = build_jinen_prompt(&katakana, &filtered_context);
 
         // Tokenize
         let tokens = self.model.tokenize(&prompt)?;
