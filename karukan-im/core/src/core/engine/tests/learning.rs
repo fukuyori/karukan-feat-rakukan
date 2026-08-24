@@ -460,3 +460,103 @@ fn space_key_keeps_learning_in_composing() {
         texts,
     );
 }
+
+/// Engine with an empty learning cache and no model.
+fn engine_with_empty_learning() -> InputMethodEngine {
+    let mut engine = InputMethodEngine::new();
+    engine.converters.kanji = None;
+    engine.learning = Some(LearningCache::new(LearningConfig::default()));
+    engine
+}
+
+#[test]
+fn fallback_commit_is_not_learned() {
+    // With no model, dictionary, or learning entries, Space builds only
+    // fallback candidates. Committing one must not pollute the history —
+    // it is the engine's own placeholder, not a conversion the user chose.
+    let mut engine = engine_with_empty_learning();
+
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    engine.process_key(&press_key(Keysym::SPACE));
+    assert!(matches!(engine.state(), InputState::Conversion { .. }));
+
+    let selected_source = engine
+        .state()
+        .candidates()
+        .unwrap()
+        .selected()
+        .unwrap()
+        .source;
+    assert_eq!(selected_source, Some(CandidateSource::Fallback));
+
+    engine.process_key(&press_key(Keysym::RETURN));
+    assert_eq!(
+        engine.learning.as_ref().unwrap().entry_count(),
+        0,
+        "committing a fallback candidate must not record learning"
+    );
+}
+
+#[test]
+fn live_conversion_commit_is_not_learned() {
+    // Committing the live conversion accepts the model's guess without
+    // choosing it (Model source, explicit = false): not learned.
+    let mut engine = engine_with_empty_learning();
+    engine.live.enabled = true;
+
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    set_live_text(&mut engine, "愛");
+
+    let result = engine.process_key(&press_key(Keysym::RETURN));
+    assert!(result.consumed);
+    assert_eq!(
+        engine.learning.as_ref().unwrap().entry_count(),
+        0,
+        "a live-conversion commit must not record learning"
+    );
+}
+
+#[test]
+fn kana_commit_is_learned() {
+    // Enter on a plain kana composition (no live text) commits the reading
+    // itself; the kana identity is learned by decision (2026-08-24), so a
+    // frequently used kana word can rise in the candidates.
+    let mut engine = engine_with_empty_learning();
+
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    engine.process_key(&press_key(Keysym::RETURN));
+
+    let cache = engine.learning.as_ref().unwrap();
+    assert_eq!(cache.entry_count(), 1);
+    assert_eq!(cache.lookup("あい")[0].0, "あい");
+}
+
+#[test]
+fn explicit_learning_candidate_commit_updates_learning() {
+    // Selecting a learned candidate in the window and committing it keeps
+    // recording (frequency +1), the Learning-source branch of the policy.
+    let mut engine = engine_with_learned("あい", "藍");
+
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    engine.process_key(&press_key(Keysym::SPACE));
+    assert!(matches!(engine.state(), InputState::Conversion { .. }));
+    assert_eq!(
+        engine
+            .state()
+            .candidates()
+            .unwrap()
+            .selected()
+            .unwrap()
+            .source,
+        Some(CandidateSource::Learning)
+    );
+
+    engine.process_key(&press_key(Keysym::RETURN));
+    let cache = engine.learning.as_ref().unwrap();
+    let entries = cache.lookup("あい");
+    assert_eq!(entries[0].0, "藍");
+}

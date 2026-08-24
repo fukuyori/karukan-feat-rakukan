@@ -331,6 +331,7 @@ impl InputMethodEngine {
         };
         let text = selected.text.clone();
         let reading = selected.reading.clone();
+        let source = selected.source;
         if text.is_empty() {
             return EngineResult::consumed();
         }
@@ -338,7 +339,7 @@ impl InputMethodEngine {
         // A suggestion always carries its reading; fall back to the buffer
         // so a candidate built without one still records under a key.
         let reading = reading.or_else(|| Some(self.input_buf.reading()));
-        self.finish_conversion(&text, &reading);
+        self.finish_conversion(&text, &reading, source);
 
         EngineResult::consumed()
             .with_action(EngineAction::Commit(text))
@@ -635,16 +636,18 @@ impl InputMethodEngine {
         let text = match &self.state {
             InputState::Empty => String::new(),
             InputState::Composing { .. } => {
-                let (reading, text) = self.resolve_composing_commit();
-                self.record_learning(&reading, &text);
+                let (reading, text, learn) = self.resolve_composing_commit();
+                if learn {
+                    self.record_learning(&reading, &text);
+                }
                 self.end_composition();
                 text
             }
             InputState::Conversion { .. } => {
-                let (text, reading) = self
+                let (text, reading, source) = self
                     .selected_conversion_info()
                     .expect("state is Conversion");
-                self.finish_conversion(&text, &reading);
+                self.finish_conversion(&text, &reading, source);
                 text
             }
         };
