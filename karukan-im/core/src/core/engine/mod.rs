@@ -9,6 +9,7 @@ mod conversion;
 mod cursor;
 mod display;
 mod filter;
+mod fkeys;
 mod init;
 mod input;
 mod input_buffer;

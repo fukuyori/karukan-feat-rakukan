@@ -281,6 +281,13 @@ impl InputMethodEngine {
             Keysym::RIGHT => self.move_caret_right(),
             Keysym::HOME => self.move_caret_home(),
             Keysym::END => self.move_caret_end(),
+            // F6/F7/F8: whole-composition transform to ひらがな /
+            // 全角カタカナ / 半角カタカナ (mozc-style).
+            Keysym::F6 | Keysym::F7 | Keysym::F8 => {
+                let index = super::fkeys::fkey_transform_index(key.keysym)
+                    .expect("arm matches F6..F8 only");
+                self.fkey_conversion(index)
+            }
             _ => {
                 if let Some(ch) = key.to_char()
                     && !key.modifiers.control_key
