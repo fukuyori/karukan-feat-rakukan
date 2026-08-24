@@ -153,6 +153,23 @@ impl KanaKanjiConverter {
 
         let mut candidates = Vec::with_capacity(num_candidates);
 
+        // Degenerate output (echoes, runaway repetition, extreme lengths) is
+        // dropped instead of surfacing as a candidate; when everything is
+        // dropped the reading fallback below still applies.
+        let mut push_checked =
+            |candidates: &mut Vec<String>, clean: String| match super::quality::degenerate_reason(
+                &clean, reading,
+            ) {
+                None => {
+                    if !candidates.contains(&clean) {
+                        candidates.push(clean);
+                    }
+                }
+                Some(why) => {
+                    tracing::debug!("dropped degenerate candidate ({why:?}): {clean:?}");
+                }
+            };
+
         if num_candidates == 1 {
             // Single candidate: use greedy decoding (faster)
             let output_tokens = self.model.generate(&tokens, budget, eos)?;
@@ -160,9 +177,7 @@ impl KanaKanjiConverter {
             let text = self.model.decode(generated, true)?;
             let clean = clean_model_output(&text);
 
-            if !clean.is_empty() {
-                candidates.push(clean);
-            }
+            push_checked(&mut candidates, clean);
         } else {
             // Multiple candidates: use beam search
             let results = self
@@ -185,9 +200,7 @@ impl KanaKanjiConverter {
                 let text = self.model.decode(&c.tokens, true)?;
                 let clean = clean_model_output(&text);
 
-                if !clean.is_empty() && !candidates.contains(&clean) {
-                    candidates.push(clean);
-                }
+                push_checked(&mut candidates, clean);
             }
         }
 
