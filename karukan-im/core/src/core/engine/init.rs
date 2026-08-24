@@ -317,7 +317,7 @@ impl InputMethodEngine {
             return;
         }
 
-        match Dictionary::merge(dicts) {
+        match Dictionary::merge(&dicts) {
             Ok(Some(merged)) => {
                 debug!(
                     "User dictionaries merged successfully ({} files from {:?})",
