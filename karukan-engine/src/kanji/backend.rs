@@ -169,7 +169,19 @@ impl KanaKanjiConverter {
                 .model
                 .generate_beam_search(&tokens, budget, eos, num_candidates)?;
 
-            for c in results {
+            // Only beams that reached EOS become candidates: a budget-cut
+            // beam is prose cut mid-output, not a conversion of the reading.
+            // If every beam was cut, the reading fallback below still applies.
+            let (complete, truncated): (Vec<_>, Vec<_>) =
+                results.into_iter().partition(|c| c.finished);
+            if !truncated.is_empty() {
+                tracing::debug!(
+                    "beam search: {}/{} beams hit the generation budget and were dropped",
+                    truncated.len(),
+                    truncated.len() + complete.len()
+                );
+            }
+            for c in complete {
                 let text = self.model.decode(&c.tokens, true)?;
                 let clean = clean_model_output(&text);
 

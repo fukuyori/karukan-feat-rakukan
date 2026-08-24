@@ -1097,6 +1097,36 @@ mod beam_search_tests {
                 .is_empty()
         );
     }
+
+    /// A budget too small to spell the conversion must come back flagged
+    /// unfinished, and a comfortable budget must reach EOS — the flag is
+    /// what lets the caller keep truncated prose out of the candidates.
+    #[test]
+    fn budget_cut_beams_are_flagged_unfinished() {
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
+        let eos = Some(model.eos_token_id().0);
+        let tokens = tokens_for(&model, "キョウハイイテンキデスネ");
+
+        let cut = model
+            .generate_beam_search(&tokens, 3, eos, 3)
+            .expect("beam search failed");
+        assert!(!cut.is_empty());
+        assert!(
+            cut.iter().all(|c| !c.finished),
+            "a 3-token budget cannot finish this sentence"
+        );
+
+        let full = model
+            .generate_beam_search(&tokens, 50, eos, 3)
+            .expect("beam search failed");
+        assert!(
+            full.iter().any(|c| c.finished),
+            "a 50-token budget must reach EOS"
+        );
+    }
 }
 
 #[cfg(test)]
