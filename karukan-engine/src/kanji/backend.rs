@@ -22,6 +22,24 @@ impl Default for ConversionConfig {
     }
 }
 
+/// Hard ceiling for the generation budget, whatever the reading length.
+/// Bounds inference time on abnormal inputs that never reach EOS.
+const MAX_GENERATION_BUDGET: usize = 256;
+
+/// Generation budget in tokens for a reading of `reading_chars` characters.
+///
+/// `configured_max` (`ConversionConfig::max_new_tokens`) acts as the floor:
+/// short readings keep the configured budget, while long readings get
+/// `reading_chars * 2 + 8` so the output is never truncated merely because
+/// the reading was long. Kanji output is at most ~1 token per reading char
+/// and byte-fallback runs cost up to 3 tokens per char, so 2x + slack covers
+/// real conversions; [`MAX_GENERATION_BUDGET`] caps the pathological case.
+pub fn generation_budget(reading_chars: usize, configured_max: usize) -> usize {
+    (reading_chars.saturating_mul(2).saturating_add(8))
+        .max(configured_max)
+        .min(MAX_GENERATION_BUDGET)
+}
+
 /// Build a prompt in jinen format.
 ///
 /// The prompt is NFKC-normalized: jinen models are trained on NFKC text and
@@ -122,43 +140,86 @@ impl KanaKanjiConverter {
         // Convert hiragana to katakana (model expects katakana input)
         let katakana = hiragana_to_katakana(reading);
 
+        // A context sentence that echoes the input kana pulls the model
+        // toward echoing instead of converting; filter what the model sees.
+        // The caller's stored context (and any cache key built from it) is
+        // untouched.
+        let filtered_context = super::quality::echo_free_context(context, reading);
+        if filtered_context != context {
+            tracing::debug!("echo context filtered: {context:?} -> {filtered_context:?}");
+        }
+
         // Build prompt in jinen format
-        let prompt = build_jinen_prompt(&katakana, context);
+        let prompt = build_jinen_prompt(&katakana, &filtered_context);
 
         // Tokenize
         let tokens = self.model.tokenize(&prompt)?;
         let eos = Some(self.model.eos_token_id().0);
 
+        // Budget scales with the reading so long readings aren't truncated
+        // mid-output by the fixed configured maximum.
+        let budget = generation_budget(katakana.chars().count(), self.config.max_new_tokens);
+
         let mut candidates = Vec::with_capacity(num_candidates);
+
+        // Degenerate output (echoes, runaway repetition, extreme lengths) is
+        // dropped instead of surfacing as a candidate; when everything is
+        // dropped the reading fallback below still applies.
+        let push_checked =
+            |candidates: &mut Vec<String>, clean: String| match super::quality::degenerate_reason(
+                &clean, reading,
+            ) {
+                None => {
+                    if !candidates.contains(&clean) {
+                        candidates.push(clean);
+                    }
+                }
+                Some(why) => {
+                    tracing::debug!("dropped degenerate candidate ({why:?}): {clean:?}");
+                }
+            };
 
         if num_candidates == 1 {
             // Single candidate: use greedy decoding (faster)
-            let output_tokens = self
-                .model
-                .generate(&tokens, self.config.max_new_tokens, eos)?;
+            let output_tokens = self.model.generate(&tokens, budget, eos)?;
             let generated = &output_tokens[tokens.len()..];
             let text = self.model.decode(generated, true)?;
             let clean = clean_model_output(&text);
 
-            if !clean.is_empty() {
-                candidates.push(clean);
-            }
+            push_checked(&mut candidates, clean);
         } else {
             // Multiple candidates: use beam search
-            let results = self.model.generate_beam_search(
-                &tokens,
-                self.config.max_new_tokens,
-                eos,
-                num_candidates,
-            )?;
+            let results = self
+                .model
+                .generate_beam_search(&tokens, budget, eos, num_candidates)?;
 
-            for (output_tokens, _score) in results {
-                let text = self.model.decode(&output_tokens, true)?;
+            // Only beams that reached EOS become candidates: a budget-cut
+            // beam is prose cut mid-output, not a conversion of the reading.
+            // If every beam was cut, the reading fallback below still applies.
+            let (complete, truncated): (Vec<_>, Vec<_>) =
+                results.into_iter().partition(|c| c.finished);
+            if !truncated.is_empty() {
+                tracing::debug!(
+                    "beam search: {}/{} beams hit the generation budget and were dropped",
+                    truncated.len(),
+                    truncated.len() + complete.len()
+                );
+            }
+            for c in complete {
+                let text = self.model.decode(&c.tokens, true)?;
                 let clean = clean_model_output(&text);
 
-                if !clean.is_empty() && !candidates.contains(&clean) {
-                    candidates.push(clean);
-                }
+                // Observation stage of the confidence filter (Phase 1-E):
+                // log the length-normalized score only. A rejection rule is
+                // added once real distributions have been collected.
+                tracing::debug!(
+                    "candidate {:?}: avg_logprob {:.3} over {} tokens",
+                    clean,
+                    c.score / c.tokens.len().max(1) as f32,
+                    c.tokens.len()
+                );
+
+                push_checked(&mut candidates, clean);
             }
         }
 
@@ -181,10 +242,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn generation_budget_uses_configured_max_as_floor() {
+        // Short readings keep the configured budget.
+        assert_eq!(generation_budget(0, 50), 50);
+        assert_eq!(generation_budget(10, 50), 50);
+        // 21 chars is the break-even: 21 * 2 + 8 = 50.
+        assert_eq!(generation_budget(21, 50), 50);
+        assert_eq!(generation_budget(22, 50), 52);
+    }
+
+    #[test]
+    fn generation_budget_scales_with_reading_length() {
+        assert_eq!(generation_budget(30, 50), 68);
+        assert_eq!(generation_budget(45, 50), 98);
+        // A configured max above the formula wins.
+        assert_eq!(generation_budget(30, 100), 100);
+    }
+
+    #[test]
+    fn generation_budget_is_capped() {
+        assert_eq!(generation_budget(1000, 50), MAX_GENERATION_BUDGET);
+        assert_eq!(generation_budget(124, 50), MAX_GENERATION_BUDGET);
+        // 123 chars: 123 * 2 + 8 = 254, just under the cap.
+        assert_eq!(generation_budget(123, 50), 254);
+        // The cap also bounds an oversized configured max.
+        assert_eq!(generation_budget(10, 10_000), MAX_GENERATION_BUDGET);
+    }
+
+    #[test]
 
     fn test_default_model_conversion() {
-        let backend =
-            Backend::from_variant_id("jinen-v2-small-q5").expect("Failed to load default model");
+        // Skipped rather than failing when the model isn't available offline.
+        let Ok(backend) = Backend::from_variant_id("jinen-v2-small-q5") else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let converter = KanaKanjiConverter::new(backend).expect("Failed to create converter");
 
         let result = converter.convert("かんじ", "", 1);
@@ -206,9 +298,15 @@ mod tests {
     fn test_xsmall_special_tokens() {
         use super::super::hf_download::{get_path_by_id, get_tokenizer_path_by_id};
         use super::super::{CONTEXT_TOKEN, INPUT_START_TOKEN, OUTPUT_START_TOKEN};
-        let path = get_path_by_id("jinen-v1-xsmall-q5").expect("Failed to download GGUF");
-        let tok_path =
-            get_tokenizer_path_by_id("jinen-v1-xsmall-q5").expect("Failed to download tokenizer");
+        // Skipped rather than failing when the model isn't available offline.
+        let Ok(path) = get_path_by_id("jinen-v1-xsmall-q5") else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
+        let Ok(tok_path) = get_tokenizer_path_by_id("jinen-v1-xsmall-q5") else {
+            eprintln!("tokenizer unavailable, skipping");
+            return;
+        };
         let model = LlamaCppModel::from_file(&path, &tok_path).expect("Failed to load model");
 
         let prompt = build_jinen_prompt("テスト", "");
@@ -239,8 +337,11 @@ mod tests {
     #[test]
 
     fn test_xsmall_conversion() {
-        let backend =
-            Backend::from_variant_id("jinen-v1-xsmall-q5").expect("Failed to download GGUF");
+        // Skipped rather than failing when the model isn't available offline.
+        let Ok(backend) = Backend::from_variant_id("jinen-v1-xsmall-q5") else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let converter = KanaKanjiConverter::new(backend).expect("Failed to create converter");
 
         let result = converter.convert("かんじ", "", 1);

@@ -50,6 +50,8 @@ mod llamacpp_tests {
         LlamaCppModel, build_jinen_prompt, get_path_by_id, get_tokenizer_path_by_id, registry,
     };
 
+    /// Load the default registry model, or `None` when it isn't available
+    /// locally (the tests are skipped rather than failing offline).
     fn load_model() -> Option<LlamaCppModel> {
         let reg = registry();
         let path = get_path_by_id(&reg.default_model).ok()?;
@@ -63,7 +65,10 @@ mod llamacpp_tests {
 
     #[test]
     fn test_tokenization() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let tokens = model.tokenize("コンニチハ").expect("Tokenize failed");
         assert!(!tokens.is_empty());
     }
@@ -75,7 +80,10 @@ mod llamacpp_tests {
         // marks those as special, so a naive skip_special_tokens decode would
         // drop them (「斉木楠雄のΨ難」→「斉木楠雄の難」). decode(_, true)
         // must keep them, whatever the byte length of the character.
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let cases = [
             "斉木楠雄のΨ難", // Ψ: 2-byte fallback
             "€100",          // €: 3-byte fallback
@@ -91,7 +99,10 @@ mod llamacpp_tests {
 
     #[test]
     fn test_generation() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let prompt = build_prompt("ワセダ");
         let tokens = model.tokenize(&prompt).expect("Tokenize failed");
 
@@ -110,7 +121,10 @@ mod llamacpp_tests {
 
     #[test]
     fn test_expected_conversions() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let test_cases = [
             ("ワセダ", "早稲田"),
             ("トウキョウ", "東京"),
@@ -139,7 +153,10 @@ mod llamacpp_tests {
 
     #[test]
     fn test_beam_search_basic() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let prompt = build_prompt("ヘンカン");
         let tokens = model.tokenize(&prompt).expect("Tokenize failed");
         let eos = Some(model.eos_token_id().0);
@@ -152,8 +169,8 @@ mod llamacpp_tests {
 
         let candidates: Vec<String> = results
             .iter()
-            .filter_map(|(t, _)| {
-                let s = clean_output(&model.decode(t, true).ok()?);
+            .filter_map(|c| {
+                let s = clean_output(&model.decode(&c.tokens, true).ok()?);
                 if s.is_empty() { None } else { Some(s) }
             })
             .collect();
@@ -168,7 +185,10 @@ mod llamacpp_tests {
 
     #[test]
     fn test_beam_search_multiple_inputs() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let test_cases = [
             ("カンジ", vec!["漢字", "感じ"]),
             ("キョウ", vec!["今日", "京"]),
@@ -186,8 +206,8 @@ mod llamacpp_tests {
 
             let candidates: Vec<String> = results
                 .iter()
-                .filter_map(|(t, _)| {
-                    let s = clean_output(&model.decode(t, true).ok()?);
+                .filter_map(|c| {
+                    let s = clean_output(&model.decode(&c.tokens, true).ok()?);
                     if s.is_empty() { None } else { Some(s) }
                 })
                 .collect();
@@ -205,7 +225,10 @@ mod llamacpp_tests {
 
     #[test]
     fn test_beam_search_score_ordering() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
         let prompt = build_prompt("ヘンカン");
         let tokens = model.tokenize(&prompt).expect("Tokenize failed");
         let eos = Some(model.eos_token_id().0);
@@ -214,7 +237,7 @@ mod llamacpp_tests {
             .generate_beam_search(&tokens, 20, eos, 5)
             .expect("Beam search failed");
 
-        let scores: Vec<f32> = results.iter().map(|(_, s)| *s).collect();
+        let scores: Vec<f32> = results.iter().map(|c| c.score).collect();
 
         for i in 1..scores.len() {
             assert!(
@@ -229,7 +252,10 @@ mod llamacpp_tests {
 
     #[test]
     fn test_conversion_with_context() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
 
         // Test that context influences conversion
         // "てんき" without context
@@ -267,7 +293,10 @@ mod llamacpp_tests {
 
     #[test]
     fn test_context_variations() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
 
         let test_cases = [
             // (katakana, context, expected_contains)
@@ -299,7 +328,10 @@ mod llamacpp_tests {
     /// Same reading "こうえん" should produce different kanji based on context
     #[test]
     fn test_context_disambiguation() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
 
         // Test cases where context should produce different results for the same reading
         let disambiguation_cases = [
@@ -351,7 +383,10 @@ mod llamacpp_tests {
     /// Test "zenninn" -> "ゼンイン" conversion (reported crash)
     #[test]
     fn test_zenninn_llamacpp() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
 
         // "zenninn" -> "ぜんいん" -> katakana "ゼンイン"
         let katakana = "ゼンイン";
@@ -382,7 +417,10 @@ mod llamacpp_tests {
     /// Test beam search with multiple candidates (this was causing decode errors)
     #[test]
     fn test_zenninn_beam_search() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
 
         let katakana = "ゼンイン";
         let prompt = build_jinen_prompt(katakana, "");
@@ -399,15 +437,18 @@ mod llamacpp_tests {
 
         println!("Beam search returned {} results", results.len());
 
-        for (i, (output_tokens, score)) in results.iter().enumerate() {
-            println!("Result {}: tokens={:?}, score={}", i, output_tokens, score);
+        for (i, c) in results.iter().enumerate() {
+            println!(
+                "Result {}: tokens={:?}, score={}, finished={}",
+                i, c.tokens, c.score, c.finished
+            );
 
-            if output_tokens.is_empty() {
+            if c.tokens.is_empty() {
                 println!("  -> Empty tokens, skipping decode");
                 continue;
             }
 
-            match model.decode(output_tokens, true) {
+            match model.decode(&c.tokens, true) {
                 Ok(text) => println!("  -> Decoded: '{}'", text),
                 Err(e) => println!("  -> Decode error: {}", e),
             }
@@ -417,7 +458,10 @@ mod llamacpp_tests {
     /// Test that long context inputs work within n_ctx=256 limit
     #[test]
     fn test_long_context_input() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
 
         // Long context that produces many tokens (but still within 256)
         let long_context =
@@ -449,7 +493,10 @@ mod llamacpp_tests {
     /// same token ids as the half-width input.
     #[test]
     fn test_tokenizer_nfkc_normalization() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
 
         // Full-width → half-width pairs that NFKC should normalize
         let cases = [
@@ -487,7 +534,10 @@ mod llamacpp_tests {
     /// Test token counts for various input lengths
     #[test]
     fn test_token_counts() {
-        let model = load_model().expect("Failed to load");
+        let Some(model) = load_model() else {
+            eprintln!("model unavailable, skipping");
+            return;
+        };
 
         let test_cases = [
             ("ヘンカン", "", 10),                               // Short input

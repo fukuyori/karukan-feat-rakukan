@@ -585,6 +585,11 @@ async fn llamacpp_convert(
                 tracing::debug!("Greedy produced empty output, falling back to beam search");
                 let beam_results = model
                     .generate_beam_search(&input_tokens, 64, eos_token_id, 3)
+                    .map(|v| {
+                        v.into_iter()
+                            .map(|c| (c.tokens, c.score))
+                            .collect::<Vec<_>>()
+                    })
                     .map_err(|e| {
                         tracing::error!("llama.cpp beam search fallback error: {}", e);
                         (
@@ -644,7 +649,9 @@ async fn llamacpp_convert(
             let beam_results = if use_d1_greedy {
                 model.generate_beam_search_d1_greedy(&input_tokens, 64, eos_token_id, beam_size)
             } else {
-                model.generate_beam_search(&input_tokens, 64, eos_token_id, beam_size)
+                model
+                    .generate_beam_search(&input_tokens, 64, eos_token_id, beam_size)
+                    .map(|v| v.into_iter().map(|c| (c.tokens, c.score)).collect())
             }
             .map_err(|e| {
                 tracing::error!("llama.cpp beam search error: {}", e);
