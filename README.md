@@ -85,7 +85,18 @@ IME本体(コアエンジン + 各プラットフォームのフロントエン�
 
 ## インストール
 
-- **Linux (fcitx5)**: [karukan-fcitx5 の README](karukan-im/fcitx5/README.md#install) を参照
+**Linux (fcitx5)** はリポジトリ直下のインストーラで一括導入できます(ビルド → インストール → `FCITX_ADDON_DIRS` 設定 → システム辞書ダウンロードまで):
+
+```bash
+git clone https://github.com/fukuyori/karukan-feat-rakukan.git
+cd karukan-feat-rakukan
+./install.sh              # ユーザーローカル (~/.local、sudo 不要)
+# ./install.sh --system   # システム (/usr)
+# ./install.sh --help     # オプション一覧(アンインストールも可能)
+```
+
+必要な依存パッケージが不足している場合は、インストーラが `apt` のコマンドを提示して停止します。手動での手順は [karukan-fcitx5 の README](karukan-im/fcitx5/README.md#install) を参照してください。
+
 - **macOS**: [karukan-macos の README](karukan-im/macos/README.md) を参照
 
 ## ドキュメント
