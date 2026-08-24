@@ -142,8 +142,8 @@ mod tests {
         let ids = reg.all_variant_ids();
         assert_eq!(
             ids.len(),
-            5,
-            "Expected exactly 5 variants, got {}",
+            7,
+            "Expected exactly 7 variants, got {}",
             ids.len()
         );
         assert!(ids.contains(&"jinen-v1-xsmall-q5"));
@@ -151,13 +151,15 @@ mod tests {
         assert!(ids.contains(&"jinen-v1.1-beta-q5"));
         assert!(ids.contains(&"jinen-v2-xsmall-q5"));
         assert!(ids.contains(&"jinen-v2-small-q5"));
+        assert!(ids.contains(&"jinen-v2-xsmall-f16"));
+        assert!(ids.contains(&"jinen-v2-small-f16"));
     }
 
     #[test]
     fn test_iter_variants() {
         let reg = registry();
         let count = reg.iter_variants().count();
-        assert_eq!(count, 5, "Expected exactly 5 variants, got {}", count);
+        assert_eq!(count, 7, "Expected exactly 7 variants, got {}", count);
     }
 
     #[test]
