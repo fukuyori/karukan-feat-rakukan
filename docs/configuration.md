@@ -44,7 +44,9 @@ digit = "half"                 # 0-9
 | モデルID | ベースモデル | パラメータ数 | Accuracy@1 (NFKC) |
 |---------|-----------|-----------|------:|
 | [`jinen-v2-small-q5`](https://huggingface.co/togatogah/jinen-v2-small.gguf)（デフォルト） | Qwen3 | 109M | 86.0% |
+| [`jinen-v2-small-f16`](https://huggingface.co/togatogah/jinen-v2-small.gguf)（非量子化、DL 210MB） | Qwen3 | 109M | — |
 | [`jinen-v2-xsmall-q5`](https://huggingface.co/togatogah/jinen-v2-xsmall.gguf) | Qwen3 | 36M | 79.0% |
+| [`jinen-v2-xsmall-f16`](https://huggingface.co/togatogah/jinen-v2-xsmall.gguf)（非量子化、DL 69MB） | Qwen3 | 36M | — |
 | [`jinen-v1.1-beta-q5`](https://huggingface.co/togatogah/jinen-v1.1-beta.gguf) | Qwen3 | 109M（beta） | 86.0% |
 | [`jinen-v1-small-q5`](https://huggingface.co/togatogah/jinen-v1-small.gguf) | GPT-2 | 90M | 76.5% |
 | [`jinen-v1-xsmall-q5`](https://huggingface.co/togatogah/jinen-v1-xsmall.gguf) | GPT-2 | 26M | 71.0% |
