@@ -6,9 +6,11 @@
 //! frontend should close the child's stdin (or send `save_learning`) before
 //! terminating it.
 //!
-//! `--prefetch-models` downloads every conversion model listed in
-//! `models.toml` into the HuggingFace cache and exits (used by `make install`
-//! to avoid a multi-minute download on first launch).
+//! `--prefetch-models` downloads the conversion models the current
+//! configuration uses (plus the registry default) into the HuggingFace
+//! cache and exits (used by `make install` to avoid a multi-minute
+//! download on first launch). Other registry variants — e.g. the large
+//! F16 ones — are downloaded only when a config selects them.
 
 use std::io::{BufRead, Write};
 
@@ -26,7 +28,23 @@ fn main() {
     tracing::info!("karukan-imserver {}", karukan_im::version());
 
     if std::env::args().any(|arg| arg == "--prefetch-models") {
-        if let Err(e) = karukan_engine::kanji::hf_download::prefetch_all_models() {
+        // Warm only the models this configuration actually uses (plus the
+        // registry default), not the whole registry — optional variants
+        // like F16 are several times the size of the Q5 defaults and would
+        // balloon the install download.
+        let settings = karukan_im::config::Settings::load().unwrap_or_default();
+        let mut ids = vec![karukan_engine::kanji::registry().default_model.clone()];
+        for id in [&settings.conversion.model, &settings.conversion.light_model]
+            .into_iter()
+            .flatten()
+        {
+            if !ids.contains(id) {
+                ids.push(id.clone());
+            }
+        }
+        if let Err(e) =
+            karukan_engine::kanji::hf_download::prefetch_variants(ids.iter().map(String::as_str))
+        {
             tracing::error!("model prefetch failed: {e}");
             std::process::exit(1);
         }

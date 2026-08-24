@@ -140,10 +140,25 @@ pub fn get_tokenizer_path_by_id(variant_id: &str) -> Result<PathBuf> {
 /// Download every model variant (GGUF + tokenizer) listed in `models.toml`
 /// into the HuggingFace cache, without loading any of them.
 ///
-/// Used by `karukan-imserver --prefetch-models` so installers can warm the
-/// cache up front instead of blocking the first conversion on a download.
+/// Warms the whole registry — including large optional variants like F16 —
+/// so installers should normally prefer [`prefetch_variants`] with just the
+/// models a configuration actually uses.
 pub fn prefetch_all_models() -> Result<()> {
-    for (family, variant) in registry().iter_variants() {
+    prefetch_variants(registry().iter_variants().map(|(_, v)| v.id.as_str()))
+}
+
+/// Download the given model variants (GGUF + tokenizer) into the
+/// HuggingFace cache, without loading any of them.
+///
+/// Used by `karukan-imserver --prefetch-models` so installers can warm the
+/// cache up front instead of blocking the first conversion on a download,
+/// while leaving variants nothing is configured to use — e.g. the F16
+/// ones, several times the size of the Q5 defaults — out of the download.
+pub fn prefetch_variants<'a>(ids: impl IntoIterator<Item = &'a str>) -> Result<()> {
+    for id in ids {
+        let (family, variant) = registry()
+            .find_variant(id)
+            .ok_or_else(|| KanjiError::UnknownVariant(id.to_string()))?;
         let model_path = get_variant_path(family, variant)?;
         let tokenizer_path = get_tokenizer_path(family)?;
         tracing::info!(
