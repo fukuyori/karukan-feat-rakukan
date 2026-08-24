@@ -243,15 +243,20 @@ stale_days = 180
 
 現状の `record_learning` が持つ条件はEmojiモード除外と `max_surface_chars` の2つだけで、
 `surface != reading` チェックは存在しない（かなをそのまま確定しても
-`reading → reading` が学習されている）。`surface != reading` は既存条件ではなく
-本フェーズで新設する条件として扱い、既存の学習履歴への影響を確認する。
+`reading → reading` が学習されている）。
+
+かな確定の扱い（2026-08-24 決定）: かな確定（`surface == reading`）は mozc と同様に
+**学習に含める**。よく使うかな語を上位に押し上げる働きを残すためで、
+`surface != reading` の除外条件は導入しない。学習の選別は候補ソースのみで行い、
+誤学習対策は Fallback ソースの除外が担う（モデル空振り時の生かなは
+Fallback ソースなので、この方針でも学習されない）。
 
 また `record_learning` は `(reading, surface)` しか受け取らず `CandidateSource` を
 参照していないため、ソース別方針にはコミット経路3箇所
 （`conversion.rs` の `finish_conversion`、`input.rs` の `commit_composing`、
 `mod.rs` の `commit`）へsourceを渡す配線を新設する。
 
-ライブ変換を候補ウィンドウなしで確定した場合は、上記の新設条件と
+ライブ変換を候補ウィンドウなしで確定した場合は、ソース別方針と
 最大文字数・入力モードの既存条件を合わせて判定する。
 
 #### 2-C. ユーザー辞書のhot reload
