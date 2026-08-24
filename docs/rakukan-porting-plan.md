@@ -340,13 +340,42 @@ Rakukan の `RangeSelect` はWindows TSFのcomposition管理に結合してい�
 - Escapeで範囲指定を解除し、元の読みまたは表示へ戻す。
 - 数字・記号chunkの途中に不正な境界を作らない。
 
-想定するCore変更:
+設計方針（2026-08-24 詳細化）: Rakukan の失敗はプラットフォーム
+（TSF がcompositionを所有し、範囲・編集が非同期 edit session 越しになる）
+との戦いが原因であり、Karukan ではフロントエンドが preedit の
+レンダラに過ぎないため、範囲指定は純粋なエンジン内状態設計の問題に
+還元される。失敗リスクは範囲の表現を極限まで単純にすることで下げる。
 
-- 範囲指定用の状態または既存状態に選択範囲メタデータを追加する。
-- preedit属性で選択範囲と未選択範囲を区別する。
-- 部分変換候補に、対応するreadingと未変換remainderを保持する。
-- 部分確定をCoreの1つの操作として定義し、fcitx5/macOS固有コードへ分散させない。
-- Ctrl+Jの手動chunk境界との優先順位を定義する。
+Core 変更（設計済み）:
+
+- 範囲は「読みの先頭からの文字数」**1個の整数**に限定する
+  （`range_select: Option<usize>` フィールド。新しい状態 enum は作らない）。
+  anchor は常に読みの先頭で、任意区間・anchor 移動は将来の拡張に分離する。
+- 範囲の解除は `end_composition` / `clear_composition` という既存の
+  全出口1本道で行い、Escape・Backspace・フォーカス移動での状態破損を防ぐ。
+- 範囲モード中のその他の編集キーは「範囲解除 → 通常処理」。Ctrl+J も同様
+  （範囲変換は chunk 境界と独立）。ライブ変換表示中の Shift+Right は、
+  先に生読み表示へ戻してから範囲モードに入る（選択対象は常に読み）。
+- 表示は定義済み未使用の `AttributeType::UnderlineDouble` と
+  `Preedit::from_segments` を使う。
+- 範囲の変換は `reading[..n]` を既存の `build_conversion_candidates` →
+  `enter_conversion_state` に渡すだけ。変換キャッシュは（読み, lctx）キーで
+  そのまま効き、数字・記号境界は prefix の変換自体が chunk 分割を通る
+  ため無害化される。Conversion 状態に `span: Option<usize>` を追加する
+  （None = 従来の全体変換で、既存経路は不変）。
+- 新設が必要な唯一のプリミティブは**部分確定** `commit_range(n, text)`:
+  Commit(text) 発行 → InputBuffer 先頭 n 要素の drain（raw 打鍵・
+  chunk_breaks も同時にシフト）→ 学習記録（ソース方針適用）→
+  `refresh_input_state()` で残り読みのライブ変換を再開。Core の1操作として
+  定義し、fcitx5/macOS 固有コードへ分散させない。
+
+コミット単位: (1) `InputBuffer::drain_prefix` + テスト、(2) `range_select` +
+Shift+←→ + 描画、(3) prefix 変換 + `span` 付き Conversion、
+(4) `commit_range` + 学習 + ライブ再開、(5) 実機確認 + docs。
+
+最大のリスクは「Commit と preedit 更新を1キーイベントで両立」する
+部分確定のフロントエンド適用で、実アプリでしか検証できない。問題が出た
+場合は部分確定を2段階（確定のみ → 次イベントで preedit 復元）へ逃がす。
 
 利用できる既存部品（確認済み）:
 
@@ -362,9 +391,10 @@ Rakukan の `RangeSelect` はWindows TSFのcomposition管理に結合してい�
 完了条件:
 
 - ひらがな、ライブ変換結果、通常変換候補の各状態から範囲指定へ移行できる。
-- 選択範囲の確定後も残りの読みが失われない。
+- 選択範囲の確定後も残りの読みが失われない（ライブ変換が再開する）。
 - Escape、Backspace、フォーカス移動で状態が破損しない。
 - LinuxとmacOSで同じ状態遷移テストを共有できる。
+- 部分確定が実アプリ（端末・ブラウザ・エディタ）で正しく挿入される。
 
 ### Phase 5: 任意機能
 
