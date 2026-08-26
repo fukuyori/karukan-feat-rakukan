@@ -168,7 +168,7 @@ fi
 # --- 仕上げ ----------------------------------------------------------------
 
 version="$(strings "$PREFIX/lib/fcitx5/libkarukan_fcitx5.so" 2>/dev/null \
-    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\+([0-9a-f]{7}(-dirty)?|unknown)' | head -1 || true)"
+    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+-rakukan\.[0-9]+(-[0-9]+-g[0-9a-f]+)?(-dirty)?|[0-9]+\.[0-9]+\.[0-9]+\+([0-9a-f]{7}(-dirty)?|unknown)' | head -1 || true)"
 info "インストール完了${version:+ (バージョン: $version)}"
 
 if [ "$NEED_RELOGIN" = 1 ]; then

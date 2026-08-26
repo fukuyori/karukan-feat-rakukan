@@ -13,10 +13,12 @@ pub use core::engine::{EngineAction, EngineResult, InputMethodEngine};
 pub use core::keycode::{KeyEvent, KeyModifiers, Keysym};
 pub use core::state::InputState;
 
-/// Build identification: crate version plus the git commit the build came
-/// from (`0.1.0+a1fe298`, `-dirty` appended for uncommitted changes,
-/// `+unknown` when built outside a git checkout). Embedded at compile time
-/// by `build.rs` so a running IME can report exactly which build it is.
+/// Build identification, embedded at compile time by `build.rs` so a
+/// running IME can report exactly which build it is. A build at a release
+/// tag reports the tag (`v0.1.0-rakukan.2`), one between releases the
+/// distance from the last (`v0.1.0-rakukan.2-3-g1234567`), `-dirty`
+/// appended for uncommitted changes; without a reachable tag the form is
+/// `0.1.0+a1fe298`, and `0.1.0+unknown` outside a git checkout.
 pub fn version() -> &'static str {
-    concat!(env!("CARGO_PKG_VERSION"), "+", env!("KARUKAN_GIT_DESC"))
+    env!("KARUKAN_VERSION")
 }

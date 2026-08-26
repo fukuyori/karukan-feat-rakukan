@@ -460,12 +460,16 @@ CUDA/Vulkan は未実装 — 現行モデルは CPU で十分速く、動機が�
 
 **Karukan では**: 動作中のビルドを識別する手段がなかった(cmake 上の 0.1.0 固定)。
 
-**本リポジトリでは**: `karukan-im/core/build.rs` が git 短縮ハッシュ(追跡
-ファイルに未コミット変更があれば `-dirty`)をコンパイル時に埋め込み、
-`karukan_im::version()` が `0.1.0+<hash>` を返す。表示箇所は fcitx5 の addon
-ロード時ログ(FFI `karukan_version()` 経由)と初回モデルロード中の aux、
-macOS の `karukan-imserver` 起動ログ。ファイルから直接確認するなら
-`strings libkarukan_fcitx5.so | grep -oE '0\.1\.0\+\w+'`。
+**本リポジトリでは**: `karukan-im/core/build.rs` が `git describe --tags
+--dirty` の結果をコンパイル時に埋め込み、`karukan_im::version()` が返す。
+リリースタグ上のビルドはタグ名そのもの(`v0.1.0-rakukan.2`)、タグ間の
+開発ビルドは最終リリースからの距離付き(`v0.1.0-rakukan.2-3-g1234567`)、
+追跡ファイルに未コミット変更があれば `-dirty` が付く。タグに届かない
+checkout(shallow clone・上流)では従来の `0.1.0+<hash>` 形式、git の無い
+環境(ソース tarball)では `0.1.0+unknown` にフォールバックする。表示箇所は
+fcitx5 の addon ロード時ログ(FFI `karukan_version()` 経由)と初回モデル
+ロード中の aux、macOS の `karukan-imserver` 起動ログ。ファイルから直接
+確認するなら `strings libkarukan_fcitx5.so | grep rakukan`。
 
 ---
 
