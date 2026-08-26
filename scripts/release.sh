@@ -93,7 +93,7 @@ DEB="$(ls -t dist/karukan-fcitx5_*.deb | head -1)"
 
 # 配布物のバイナリがタグ名そのものを名乗ることを確認
 EMBEDDED="$(dpkg-deb --fsys-tarfile "$DEB" \
-    | tar -xO ./usr/lib/*/fcitx5/libkarukan_fcitx5.so \
+    | tar -xO --wildcards './usr/lib/*/fcitx5/libkarukan_fcitx5.so' \
     | strings | grep -oE 'karukan-version:[^:]+:' | head -1 \
     | sed 's/^karukan-version://; s/:$//')"
 [ "$EMBEDDED" = "$TAG" ] || {
