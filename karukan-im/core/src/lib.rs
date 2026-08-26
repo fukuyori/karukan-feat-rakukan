@@ -20,5 +20,11 @@ pub use core::state::InputState;
 /// appended for uncommitted changes; without a reachable tag the form is
 /// `0.1.0+a1fe298`, and `0.1.0+unknown` outside a git checkout.
 pub fn version() -> &'static str {
-    env!("KARUKAN_VERSION")
+    // The version sits in rodata wrapped in a greppable marker with a
+    // closing `:` sentinel, so install.sh can read the installed build's
+    // version via `strings`: adjacent rodata literals concatenate in that
+    // output, and without the sentinel a following string starting with
+    // hex chars would be read as part of the commit hash.
+    const MARKED: &str = concat!("karukan-version:", env!("KARUKAN_VERSION"), ":");
+    &MARKED["karukan-version:".len()..MARKED.len() - 1]
 }

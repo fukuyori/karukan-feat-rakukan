@@ -167,8 +167,12 @@ fi
 
 # --- 仕上げ ----------------------------------------------------------------
 
+# バイナリ内の `karukan-version:<ver>:` マーカーを読む(末尾の `:` が
+# 境界。strings の出力では隣接する文字列が連結されるため、素のバージョン
+# 文字列を正規表現で切り出すと後続文字列を巻き込むことがある)
 version="$(strings "$PREFIX/lib/fcitx5/libkarukan_fcitx5.so" 2>/dev/null \
-    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+-rakukan\.[0-9]+(-[0-9]+-g[0-9a-f]+)?(-dirty)?|[0-9]+\.[0-9]+\.[0-9]+\+([0-9a-f]{7}(-dirty)?|unknown)' | head -1 || true)"
+    | grep -oE 'karukan-version:[^:]+:' | head -1 \
+    | sed 's/^karukan-version://; s/:$//' || true)"
 info "インストール完了${version:+ (バージョン: $version)}"
 
 if [ "$NEED_RELOGIN" = 1 ]; then
