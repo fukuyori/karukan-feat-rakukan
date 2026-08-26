@@ -173,6 +173,20 @@ fn f9_converts_typed_keys_to_full_alnum() {
 }
 
 #[test]
+fn f9_widens_symbol_keystrokes_too() {
+    // わーど、 typed as wa-do, — F9 widens the whole keystroke run,
+    // symbols included (`-` → `－`, `,` → `，`), not just the letters.
+    let mut engine = InputMethodEngine::new();
+    engine.converters.kanji = None;
+
+    for ch in "wa-do,".chars() {
+        engine.process_key(&press(ch));
+    }
+    engine.process_key(&press_key(Keysym::F9));
+    assert_eq!(selected_text(&engine), "ｗａ－ｄｏ，");
+}
+
+#[test]
 fn f10_repeat_cycles_case() {
     let mut engine = InputMethodEngine::new();
     engine.converters.kanji = None;

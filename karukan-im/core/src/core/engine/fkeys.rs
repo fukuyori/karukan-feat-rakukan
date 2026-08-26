@@ -41,11 +41,12 @@ fn alnum_variants(raw: &str, full: bool) -> Vec<(String, &'static str)> {
         capitalized.extend(first.to_uppercase());
         capitalized.push_str(chars.as_str());
     }
+    // width::to_full_width, not kana::ascii_to_fullwidth_char: the raw
+    // keystrokes carry symbols too (`wa-do`, `w@ve`), and only the former
+    // has the symbol width pairs (`-` → `－`).
     let widen = |s: String| -> String {
         if full {
-            s.chars()
-                .map(karukan_engine::kana::ascii_to_fullwidth_char)
-                .collect()
+            karukan_engine::width::to_full_width(&s)
         } else {
             s
         }
