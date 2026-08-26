@@ -124,6 +124,8 @@ cargo build --release       # 全crateをビルド
 cargo test --workspace      # 全テスト(モデル未取得の環境ではモデル依存テストは自動スキップ)
 ```
 
+リリース(タグ付け → .deb ビルド → GitHub Release 登録)は `scripts/release.sh` で行います(`--dry-run` でタグ名と変更点の確認のみ)。タグをビルドの**前に**作ることで、配布物のバージョン表記がタグ名そのもの(`v0.1.0-rakukan.3`)になります。
+
 ブランチ運用: 公開済みの `main` は rebase せず、上流 `togatoga/karukan` を定期的に merge して追従します。機能はフェーズ単位の feature ブランチ(`feat/rakukan-*`)で実装し、PR で `main` へ取り込みます。上流同期と機能移植は同じコミットに混ぜません。
 
 ## ライセンス
