@@ -145,10 +145,34 @@ cd karukan-feat-rakukan
 
 ## 開発
 
+### ビルド環境の準備
+
+Debian / Ubuntu 系では、先にRustツールチェーンと次のパッケージを導入します。
+Rustは [rustup](https://rustup.rs/) の利用を推奨します。
+
+```bash
+sudo apt install build-essential cmake pkg-config extra-cmake-modules \
+  fcitx5 fcitx5-modules-dev libfcitx5core-dev libfcitx5config-dev \
+  libfcitx5utils-dev libxkbcommon-dev clang libclang-dev libssl-dev
+```
+
+通常のビルドとテスト:
+
 ```bash
 cargo build --release       # 全crateをビルド
 cargo test --workspace      # 全テスト(モデル未取得の環境ではモデル依存テストは自動スキップ)
 ```
+
+配布用 `.deb` の作成:
+
+```bash
+scripts/build-deb.sh
+```
+
+生成されたパッケージは `dist/karukan-fcitx5_*.deb` に出力されます。
+未コミットの変更がある場合もビルドでき、そのパッケージとバイナリの
+バージョンにはテスト用ビルドであることを示す `.dirty` が付きます。
+正式なリリース作成時は、未コミットの変更がない状態で `scripts/release.sh` を使用してください。
 
 リリース(タグ付け → .deb ビルド → GitHub Release 登録)は `scripts/release.sh` で行います(`--dry-run` でタグ名と変更点の確認のみ)。タグをビルドの**前に**作ることで、配布物のバージョン表記がタグ名そのもの(`v0.1.0-rakukan.3`)になります。
 

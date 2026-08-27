@@ -48,3 +48,4 @@ data/
 karukan-im/macos/.build/
 karukan-im/macos/out/
 dist/
+karukan-im/fcitx5/fcitx5-addon/build-deb/

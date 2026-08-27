@@ -18,13 +18,34 @@ for cmd in dpkg-deb dpkg cmake cargo strip; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "エラー: $cmd がありません" >&2; exit 1; }
 done
 
+if ! dpkg-query -W -f='${db:Status-Abbrev}' extra-cmake-modules 2>/dev/null \
+    | grep -q '^ii '; then
+    cat >&2 <<'EOF'
+エラー: CMake の ECM (extra-cmake-modules) がありません。
+
+Debian/Ubuntuでは、ビルド依存関係を次のコマンドで導入してください:
+
+  sudo apt install extra-cmake-modules fcitx5-modules-dev \
+      libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev \
+      libxkbcommon-dev clang libclang-dev libssl-dev
+EOF
+    exit 1
+fi
+
 ARCH="$(dpkg --print-architecture)"
 HASH="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 DATE="$(git -C "$REPO_ROOT" show -s --format=%cd --date=format:%Y%m%d HEAD)"
 # 日付を含めるのはアップグレード時のバージョン比較を単調にするため
 # (ハッシュだけでは辞書順が時系列にならない)
 VERSION="0.1.0+${DATE}.g${HASH}"
+if [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ]; then
+    VERSION="${VERSION}.dirty"
+fi
 PKG="karukan-fcitx5_${VERSION}_${ARCH}"
+
+# Keep the Debian package version and the version reported by the binary in
+# sync. release.sh overrides this with the release tag for official builds.
+export KARUKAN_BUILD_VERSION="${KARUKAN_BUILD_VERSION:-$VERSION}"
 
 echo "==> 配布用ビルド (KARUKAN_NATIVE=OFF, version: $VERSION)"
 cmake -B "$BUILD_DIR" -S "$ADDON_DIR" \

@@ -87,7 +87,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> .deb をビルド"
-scripts/build-deb.sh
+KARUKAN_BUILD_VERSION="$TAG" scripts/build-deb.sh
 
 DEB="$(ls -t dist/karukan-fcitx5_*.deb | head -1)"
 

@@ -12,10 +12,14 @@
 use std::process::Command;
 
 fn main() {
-    let version = describe_tags()
+    let version = std::env::var("KARUKAN_BUILD_VERSION")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(describe_tags)
         .or_else(hash_fallback)
         .unwrap_or_else(|| format!("{}+unknown", pkg_version()));
     println!("cargo:rustc-env=KARUKAN_VERSION={version}");
+    println!("cargo:rerun-if-env-changed=KARUKAN_BUILD_VERSION");
 
     // Re-run when the checked-out commit or the tags change. HEAD covers
     // branch switches; the ref file covers new commits on the current
