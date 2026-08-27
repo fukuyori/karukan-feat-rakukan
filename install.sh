@@ -118,12 +118,37 @@ fi
 # --- ビルドとインストール --------------------------------------------------
 
 info "ビルドします (prefix: $PREFIX, target-cpu=native: $NATIVE)"
-cmake -B "$ADDON_DIR/build" -S "$ADDON_DIR" \
-    -DCMAKE_INSTALL_PREFIX="$PREFIX" -DKARUKAN_NATIVE="$NATIVE"
+cmake_args=(
+    -B "$ADDON_DIR/build"
+    -S "$ADDON_DIR"
+    -DCMAKE_INSTALL_PREFIX="$PREFIX"
+    -DKARUKAN_NATIVE="$NATIVE"
+)
+if [ "$MODE" = user ]; then
+    cmake_args+=(-DCMAKE_INSTALL_LIBDIR=lib)
+fi
+cmake "${cmake_args[@]}"
 cmake --build "$ADDON_DIR/build" -j"$(nproc)"
 
 info "インストールします"
 $SUDO cmake --install "$ADDON_DIR/build"
+
+# Fail here with a useful message instead of reporting success when CMake's
+# imported fcitx5 paths accidentally sent some files to another prefix.
+install_libdir="$(sed -n 's/^CMAKE_INSTALL_LIBDIR:[^=]*=//p' "$ADDON_DIR/build/CMakeCache.txt" | head -1)"
+[ -n "$install_libdir" ] || fail "CMake のライブラリ配置先を取得できません"
+case "$install_libdir" in
+    /*) installed_libdir="$install_libdir/fcitx5" ;;
+    *) installed_libdir="$PREFIX/$install_libdir/fcitx5" ;;
+esac
+for installed_file in \
+    "$installed_libdir/karukan.so" \
+    "$installed_libdir/libkarukan_fcitx5.so" \
+    "$PREFIX/share/fcitx5/addon/karukan.conf" \
+    "$PREFIX/share/fcitx5/inputmethod/karukan.conf"
+do
+    [ -f "$installed_file" ] || fail "インストールされたファイルが見つかりません: $installed_file"
+done
 
 # --- ユーザーローカル: FCITX_ADDON_DIRS ------------------------------------
 
@@ -133,7 +158,7 @@ if [ "$MODE" = user ]; then
     want_line="FCITX_ADDON_DIRS=$HOME/.local/lib/fcitx5:$system_fcitx5_dir"
     # システムパスを含まない古い設定(fcitx5 の標準アドオンが見つからなくなる
     # 既知の問題)もここで上書きして直す。
-    if [ ! -f "$ENV_CONF" ] || ! grep -qF "$system_fcitx5_dir" "$ENV_CONF"; then
+    if [ ! -f "$ENV_CONF" ] || [ "$(cat "$ENV_CONF")" != "$want_line" ]; then
         mkdir -p "$(dirname "$ENV_CONF")"
         echo "$want_line" > "$ENV_CONF"
         info "FCITX_ADDON_DIRS を設定しました: $ENV_CONF"
@@ -170,17 +195,21 @@ fi
 # バイナリ内の `karukan-version:<ver>:` マーカーを読む(末尾の `:` が
 # 境界。strings の出力では隣接する文字列が連結されるため、素のバージョン
 # 文字列を正規表現で切り出すと後続文字列を巻き込むことがある)
-version="$(strings "$PREFIX/lib/fcitx5/libkarukan_fcitx5.so" 2>/dev/null \
+version="$(strings "$installed_libdir/libkarukan_fcitx5.so" 2>/dev/null \
     | grep -oE 'karukan-version:[^:]+:' | head -1 \
     | sed 's/^karukan-version://; s/:$//' || true)"
 info "インストール完了${version:+ (バージョン: $version)}"
 
-if [ "$NEED_RELOGIN" = 1 ]; then
+if [ "$RESTART" = 1 ]; then
+    info "fcitx5 を新しい検索パスで再起動します"
+    if [ "$MODE" = user ]; then
+        FCITX_ADDON_DIRS="$HOME/.local/lib/fcitx5:$system_fcitx5_dir" fcitx5 -rd || true
+    else
+        fcitx5 -rd || true
+    fi
+elif [ "$NEED_RELOGIN" = 1 ]; then
     warn "初回のユーザーローカルインストールです。FCITX_ADDON_DIRS を反映するため、いったんログアウトして再ログインしてください。"
     echo "  再ログイン後、fcitx5 の設定(fcitx5-configtool)で入力メソッドに「Karukan」を追加してください。"
-elif [ "$RESTART" = 1 ]; then
-    info "fcitx5 を再起動します"
-    fcitx5 -rd || true
 else
     echo "反映するには fcitx5 を再起動してください: fcitx5 -rd"
     echo "初回は fcitx5 の設定(fcitx5-configtool)で入力メソッドに「Karukan」を追加してください。"

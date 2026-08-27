@@ -98,6 +98,41 @@ Description: Japanese IME for fcitx5 with neural kana-kanji conversion
  https://github.com/fukuyori/karukan-feat-rakukan/blob/main/docs/dictionary.md
 EOF
 
+# fcitx5 reads addon and input-method metadata when the daemon starts. A
+# maintainer script runs as root and cannot safely restart an arbitrary user's
+# desktop-session daemon, so give an explicit instruction instead of silently
+# leaving the newly installed IM absent from fcitx5-configtool.
+cat > "$STAGE/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -e
+
+if [ "$1" = configure ]; then
+    echo "Karukan: fcitx5 を実行中のユーザーとして再起動してください: fcitx5 -rd"
+    echo "Karukan: その後 fcitx5-configtool を開き直し、Karukan を追加してください。"
+fi
+EOF
+chmod 755 "$STAGE/DEBIAN/postinst"
+
+# Without the input-method metadata the libraries install successfully, but
+# Karukan never appears in the available-input-method list.
+for packaged_file in \
+    "$STAGE/usr/share/fcitx5/addon/karukan.conf" \
+    "$STAGE/usr/share/fcitx5/inputmethod/karukan.conf"
+do
+    [ -f "$packaged_file" ] || {
+        echo "エラー: パッケージに必要なファイルがありません: ${packaged_file#"$STAGE"}" >&2
+        exit 1
+    }
+done
+find "$STAGE/usr/lib" -path '*/fcitx5/karukan.so' -type f -print -quit | grep -q . || {
+    echo "エラー: パッケージに karukan.so がありません" >&2
+    exit 1
+}
+find "$STAGE/usr/lib" -path '*/fcitx5/libkarukan_fcitx5.so' -type f -print -quit | grep -q . || {
+    echo "エラー: パッケージに libkarukan_fcitx5.so がありません" >&2
+    exit 1
+}
+
 # md5sums (DEBIAN 以下を除く全ファイル)
 (cd "$STAGE" && find . -type f -not -path './DEBIAN/*' -printf '%P\n' \
     | sort | xargs md5sum > DEBIAN/md5sums)

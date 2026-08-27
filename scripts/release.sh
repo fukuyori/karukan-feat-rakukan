@@ -117,7 +117,10 @@ $(git log --format='- %s (%h)' ${LAST:+$LAST..}HEAD)
 
 \`\`\`bash
 sudo apt install ./$(basename "$DEB")
+fcitx5 -rd
 \`\`\`
+
+fcitx5 の再起動後に \`fcitx5-configtool\` を開き直し、「Karukan」を追加する。
 
 - 対応: Debian/Ubuntu 系 (amd64)、fcitx5
 - 変換モデルは初回起動時に Hugging Face から自動ダウンロード

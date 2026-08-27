@@ -49,10 +49,15 @@ fcitx5 -r
 
 ```bash
 cd karukan-im/fcitx5/fcitx5-addon
-cmake -B build -DCMAKE_INSTALL_PREFIX=$HOME/.local
+cmake -B build -DCMAKE_INSTALL_PREFIX=$HOME/.local -DCMAKE_INSTALL_LIBDIR=lib
 cmake --build build -j
 cmake --install build
 ```
+
+Debian/Ubuntu などで `lib/x86_64-linux-gnu` が自動選択される環境では、
+ユーザーローカル用のライブラリ配置を固定するため、configure 時に
+`-DCMAKE_INSTALL_LIBDIR=lib` も指定してください。ルートの `install.sh` は
+この指定とインストール結果の検証を自動で行います。
 
 ローカルインストールの場合、fcitx5 がアドオンを見つけられるように `FCITX_ADDON_DIRS` を設定する必要があります。fcitx5 はログインセッション開始時に起動されるため、シェルプロファイルではなく `~/.config/environment.d/` に設定してください:
 

@@ -10,6 +10,38 @@
   <img src="images/demo.gif" width="800" alt="karukan demo" />
 </div>
 
+## Linuxへのインストールと設定
+
+Debian / Ubuntu 系では、[Releases](https://github.com/fukuyori/karukan-feat-rakukan/releases)から
+お使いの環境向けの `karukan-fcitx5_*.deb` をダウンロードし、そのファイルがある
+ディレクトリで次を実行します。
+
+```bash
+sudo apt install ./karukan-fcitx5_*.deb
+fcitx5 -rd
+```
+
+続けてKarukanを入力メソッドに追加します。
+
+1. `fcitx5-configtool`（Fcitx Configuration）を開く
+2. 右側の「Available Input Method」で `karukan` を検索する
+3. 表示された「Karukan」を選択し、左矢印ボタンで「Current Input Method」へ追加する
+4. 「Apply」を押して設定画面を閉じる
+5. `Ctrl+Space` またはデスクトップの入力メニューでKarukanへ切り替える
+
+![Available Input MethodでKarukanを検索](karukan-im/fcitx5/images/fcitx5-search-karukan.png)
+
+![Current Input MethodへKarukanを追加](karukan-im/fcitx5/images/fcitx5-karukan-added.png)
+
+> [!IMPORTANT]
+> インストール直後にKarukanが候補へ表示されない場合は、設定画面を閉じて
+> `fcitx5 -rd` を実行し、`fcitx5-configtool` を開き直してください。
+
+初回利用時は変換モデルをバックグラウンドでダウンロードします。ダウンロード中も
+かな入力は利用でき、完了するとニューラル変換が自動的に有効になります。
+システム辞書は `.deb` に含まれないため、必要に応じて
+[辞書の導入手順](docs/dictionary.md)を参照してください。
+
 ## このリポジトリについて
 
 本流の開発は上流 [togatoga/karukan](https://github.com/togatoga/karukan) で行われています。このリポジトリは Karukan を置き換えるものではなく、Windows 向け実装 [Rakukan](https://github.com/fukuyori/rakukan) の実装・運用実績から **Linux / macOS 版 Karukan に有効な機能だけを検証・移植する派生リポジトリ**です。ここで安定性と効果を確認できた変更は、上流へ還元できる形に保っています。
@@ -82,9 +114,10 @@ IME本体(コアエンジン + 各プラットフォームのフロントエン�
 - [karukan-engine/](karukan-engine/) — コアライブラリ — ローマ字→ひらがな変換 + llama.cppによるニューラルかな漢字変換
 - [karukan-cli/](karukan-cli/) — CLIツール・サーバー — 辞書ビルド、Sudachi辞書生成、辞書ビューア、AJIMEE-Bench、HTTPサーバー
 
-## インストール
+## その他のインストール方法
 
-**Linux (fcitx5)** はリポジトリ直下のインストーラで一括導入できます(ビルド → インストール → `FCITX_ADDON_DIRS` 設定 → システム辞書ダウンロードまで):
+ソースからビルドする場合は、リポジトリ直下のインストーラーを利用できます
+（ビルド、インストール、`FCITX_ADDON_DIRS` の設定、システム辞書の取得を実行します）。
 
 ```bash
 git clone https://github.com/fukuyori/karukan-feat-rakukan.git
@@ -95,13 +128,6 @@ cd karukan-feat-rakukan
 ```
 
 必要な依存パッケージが不足している場合は、インストーラが `apt` のコマンドを提示して停止します。手動での手順は [karukan-fcitx5 の README](karukan-im/fcitx5/README.md#install) を参照してください。
-
-**配布用パッケージ(.deb)** は `scripts/build-deb.sh` でビルドできます(CPU 固有命令なしの汎用ビルド、約6MB。システム辞書は別途 [docs/dictionary.md](docs/dictionary.md) の手順で配置):
-
-```bash
-scripts/build-deb.sh
-sudo apt install ./dist/karukan-fcitx5_*.deb
-```
 
 - **macOS**: [karukan-macos の README](karukan-im/macos/README.md) を参照
 

@@ -80,18 +80,26 @@ set_target_properties(karukan PROPERTIES
     BUILD_WITH_INSTALL_RPATH FALSE
 )
 
+# Do not use FCITX_INSTALL_* here.  Those values are absolute paths baked
+# into the system Fcitx5 CMake package (for example /usr/lib/... and
+# /usr/share/fcitx5), so they ignore this project's CMAKE_INSTALL_PREFIX.
+# Relative GNUInstallDirs destinations are required for the user-local
+# installer (`cmake -DCMAKE_INSTALL_PREFIX=$HOME/.local`).
+set(KARUKAN_INSTALL_ADDONDIR "${CMAKE_INSTALL_LIBDIR}/fcitx5")
+set(KARUKAN_INSTALL_PKGDATADIR "${CMAKE_INSTALL_DATADIR}/fcitx5")
+
 # Install the addon
-install(TARGETS karukan DESTINATION "${FCITX_INSTALL_ADDONDIR}")
+install(TARGETS karukan DESTINATION "${KARUKAN_INSTALL_ADDONDIR}")
 
 # Install Rust library alongside the addon
-install(FILES "${KARUKAN_RUST_LIB}" DESTINATION "${FCITX_INSTALL_ADDONDIR}")
+install(FILES "${KARUKAN_RUST_LIB}" DESTINATION "${KARUKAN_INSTALL_ADDONDIR}")
 
 # Install addon config
-install(FILES karukan-addon.conf.in DESTINATION "${FCITX_INSTALL_PKGDATADIR}/addon"
+install(FILES karukan-addon.conf.in DESTINATION "${KARUKAN_INSTALL_PKGDATADIR}/addon"
     RENAME karukan.conf)
 
 # Install input method config
-install(FILES karukan.conf DESTINATION "${FCITX_INSTALL_PKGDATADIR}/inputmethod")
+install(FILES karukan.conf DESTINATION "${KARUKAN_INSTALL_PKGDATADIR}/inputmethod")
 
 # Install metainfo
 install(FILES org.fcitx.Fcitx5.Addon.Karukan.metainfo.xml.in
