@@ -170,11 +170,15 @@ scripts/build-deb.sh
 ```
 
 生成されたパッケージは `dist/karukan-fcitx5_*.deb` に出力されます。
+システム辞書とライセンス文書も同梱するため、インストール後の辞書取得は不要です。
+ビルド時に固定版の辞書をダウンロードし、SHA256 を検証します（`curl` が必要）。
+取得済みアーカイブを使う場合は `KARUKAN_DICT_ARCHIVE=/path/to/dict.tgz scripts/build-deb.sh`
+と指定できます。同じ固定版・SHA256 のアーカイブのみ受け付けます。
 未コミットの変更がある場合もビルドでき、そのパッケージとバイナリの
 バージョンにはテスト用ビルドであることを示す `.dirty` が付きます。
-正式なリリース作成時は、未コミットの変更がない状態で `scripts/release.sh` を使用してください。
+正式なリリース作成時は、未コミットの変更がない状態で `scripts/github-release.sh` を使用してください。
 
-リリース(タグ付け → .deb ビルド → GitHub Release 登録)は `scripts/release.sh` で行います(`--dry-run` でタグ名と変更点の確認のみ)。タグをビルドの**前に**作ることで、配布物のバージョン表記がタグ名そのもの(`v0.1.0-rakukan.3`)になります。
+リリース(タグ付け → .deb ビルド → GitHub Release 登録)は `scripts/github-release.sh` で行います(`--dry-run` でタグ名と変更点の確認のみ)。タグをビルドの**前に**作ることで、配布物のバージョン表記がタグ名そのもの(`v0.1.0-rakukan.3`)になります。
 
 ブランチ運用: 公開済みの `main` は rebase せず、上流 `togatoga/karukan` を定期的に merge して追従します。機能はフェーズ単位の feature ブランチ(`feat/rakukan-*`)で実装し、PR で `main` へ取り込みます。上流同期と機能移植は同じコミットに混ぜません。
 

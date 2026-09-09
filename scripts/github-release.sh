@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # GitHub Release の作成(タグ付け → .deb ビルド → アップロードまで)
 #
-#   scripts/release.sh                    # 次の v0.1.0-rakukan.<N+1> でリリース
-#   scripts/release.sh v0.2.0-rakukan.1   # タグ名を指定
-#   scripts/release.sh --dry-run          # タグ名と変更点だけ表示して終了
-#   scripts/release.sh --skip-tests       # cargo test を省略
+#   scripts/github-release.sh                    # 次の v0.1.0-rakukan.<N+1> でリリース
+#   scripts/github-release.sh v0.2.0-rakukan.1   # タグ名を指定
+#   scripts/github-release.sh --dry-run          # タグ名と変更点だけ表示して終了
+#   scripts/github-release.sh --skip-tests       # cargo test を省略
 #
 # バージョン表記 (git describe --tags) がタグ名そのものになるよう、
 # タグを **ビルドの前に** ローカルへ作成するのがこのスクリプトの要。
@@ -124,7 +124,7 @@ fcitx5 の再起動後に \`fcitx5-configtool\` を開き直し、「Karukan」�
 
 - 対応: Debian/Ubuntu 系 (amd64)、fcitx5
 - 変換モデルは初回起動時に Hugging Face から自動ダウンロード
-- システム辞書 (dict.bin) は同梱しない。導入手順は [docs/dictionary.md](https://github.com/fukuyori/karukan-feat-rakukan/blob/main/docs/dictionary.md)
+- システム辞書 (SudachiDict 由来) とライセンス文書を同梱。追加の辞書ダウンロードは不要
 - CPU 固有命令なしの汎用ビルド
 
 ## 検証

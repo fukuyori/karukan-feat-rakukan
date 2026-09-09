@@ -19,7 +19,7 @@ context_chars = 10              # 変換に使う前後テキストの最大文�
 beam_chars = 30                 # 別候補を出す範囲の文字数（Chunk単位で後ろからまとめる）
 beam_width = 3                  # 別候補の本数
 max_latency_ms = 100            # メインモデルの許容レイテンシ（ms）。超過時は軽量モデルに自動切替（0 = 無効）
-dict_path = "/path/to/dict.bin" # システム辞書パス（省略時はデータディレクトリの dict.bin。[Dictionary](dictionary.md) 参照）
+dict_path = "/path/to/dict.bin" # システム辞書パス（省略時は個人の dict.bin、なければ Linux の .deb 同梱辞書。[Dictionary](dictionary.md) 参照）
 
 [learning]
 enabled = true                 # 変換学習の有効/無効

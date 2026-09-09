@@ -3,7 +3,7 @@
 karukan はモデル推論に加えて、システム辞書・ユーザー辞書からの変換候補を提供します。辞書の構築・管理ツールについては [karukan-cli の README](../karukan-cli/README.md) を参照してください。
 
 > [!NOTE]
-> モデル推論だけでは語彙が限られるため、システム辞書の併用を強く推奨します。システム辞書はIMEに同梱されていないため、別途インストールが必要です。
+> モデル推論だけでは語彙が限られるため、システム辞書の併用を強く推奨します。配布用 `.deb` にはシステム辞書とライセンス文書を同梱しています。ソースから導入する場合は `install.sh` が辞書を取得します。
 
 ## System Dictionary
 
@@ -11,9 +11,16 @@ double-array trieベースのシステム辞書です。
 
 - デフォルトパス: `~/.local/share/karukan-im/dict.bin`（macOS: `~/Library/Application Support/com.karukan.karukan-im/dict.bin`）
 - `dict_path` で任意のパスを指定可能（[Configuration](configuration.md) 参照）
-- ファイルが存在しない場合は辞書なしで動作
+- Linux の `.deb` 同梱辞書: `/usr/share/karukan-im/dict.bin`
+- 読み込み優先順位: 明示的な `dict_path` → ユーザーのデフォルトパス → `.deb` 同梱辞書
+- `dict_path` を指定した場合はそのファイルのみを使用。読み込み失敗時には警告を記録
+- 同梱辞書は全ユーザーで共有し、パッケージ更新時に更新。個人の辞書ファイルは上書きしない
+- 辞書が存在しない場合は辞書なしで動作
 
-ビルド済みの辞書を以下からダウンロードして配置できます:
+同梱辞書は SudachiDict 由来で、ライセンス・第三者の権利表示・加工内容は
+`/usr/share/doc/karukan-fcitx5/dictionary/` に収録しています。
+
+`.deb` を使わず手動で配置する場合は、以下からダウンロードできます:
 
 ```bash
 # Linux

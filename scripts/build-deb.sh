@@ -4,8 +4,8 @@
 #   scripts/build-deb.sh          # dist/karukan-fcitx5_<ver>_<arch>.deb を生成
 #
 # - 配布用に -C target-cpu=native を使わずビルドする (KARUKAN_NATIVE=OFF)
-# - 辞書 (dict.bin) は同梱しない。初回は install.sh か docs/dictionary.md の
-#   手順で配置する(辞書なしでもかな入力・モデル変換は動作する)
+# - 固定版のシステム辞書とライセンス文書を同梱する
+# - KARUKAN_DICT_ARCHIVE で取得済みの同一アーカイブを指定可能
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,7 +14,7 @@ BUILD_DIR="$ADDON_DIR/build-deb"
 STAGE="$REPO_ROOT/dist/stage"
 DIST="$REPO_ROOT/dist"
 
-for cmd in dpkg-deb dpkg cmake cargo strip; do
+for cmd in dpkg-deb dpkg cmake cargo strip curl tar sha256sum; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "エラー: $cmd がありません" >&2; exit 1; }
 done
 
@@ -32,6 +32,29 @@ EOF
     exit 1
 fi
 
+# Pin both the release and digest so a release cannot silently change dictionaries.
+DICT_URL="https://github.com/togatoga/karukan/releases/download/v0.1.0/dict.tgz"
+DICT_SHA256="f194d2526bf826622bc5baf7c07e7525ad9bde2dc63896cd929045283a4aeccd"
+DICT_ARCHIVE="${KARUKAN_DICT_ARCHIVE:-$DIST/cache/dict-$DICT_SHA256.tgz}"
+if [ ! -f "$DICT_ARCHIVE" ]; then
+    if [ -n "${KARUKAN_DICT_ARCHIVE:-}" ]; then
+        echo "エラー: 辞書アーカイブがありません: $DICT_ARCHIVE" >&2
+        exit 1
+    fi
+    mkdir -p "$(dirname "$DICT_ARCHIVE")"
+    curl -fL --retry 3 -o "$DICT_ARCHIVE.part" "$DICT_URL"
+    mv "$DICT_ARCHIVE.part" "$DICT_ARCHIVE"
+fi
+printf '%s  %s\n' "$DICT_SHA256" "$DICT_ARCHIVE" | sha256sum --check
+DICT_TMP="$(mktemp -d)"
+trap 'rm -rf "$DICT_TMP"' EXIT
+# Extract only the payload and its original attribution/license documents.
+tar xzf "$DICT_ARCHIVE" -C "$DICT_TMP" --no-same-owner --no-same-permissions \
+    dict.bin docs/LEGAL docs/LICENSE-2.0.txt docs/README.md
+for file in dict.bin docs/LEGAL docs/LICENSE-2.0.txt docs/README.md; do
+    [ -s "$DICT_TMP/$file" ] || { echo "エラー: 辞書の必須ファイルがありません: $file" >&2; exit 1; }
+done
+
 ARCH="$(dpkg --print-architecture)"
 HASH="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 DATE="$(git -C "$REPO_ROOT" show -s --format=%cd --date=format:%Y%m%d HEAD)"
@@ -44,7 +67,7 @@ fi
 PKG="karukan-fcitx5_${VERSION}_${ARCH}"
 
 # Keep the Debian package version and the version reported by the binary in
-# sync. release.sh overrides this with the release tag for official builds.
+# sync. github-release.sh overrides this with the release tag for official builds.
 export KARUKAN_BUILD_VERSION="${KARUKAN_BUILD_VERSION:-$VERSION}"
 
 echo "==> 配布用ビルド (KARUKAN_NATIVE=OFF, version: $VERSION)"
@@ -61,7 +84,11 @@ find "$STAGE" -name '*.so' -exec strip --strip-unneeded {} +
 
 echo "==> ドキュメントと権限"
 DOC="$STAGE/usr/share/doc/karukan-fcitx5"
-mkdir -p "$DOC"
+mkdir -p "$DOC/dictionary" "$STAGE/usr/share/karukan-im"
+install -m 644 "$DICT_TMP/dict.bin" "$STAGE/usr/share/karukan-im/dict.bin"
+install -m 644 "$DICT_TMP"/docs/{LEGAL,LICENSE-2.0.txt,README.md} "$DOC/dictionary/"
+printf 'Source: %s\nSHA256: %s\n' "$DICT_URL" "$DICT_SHA256" > "$DOC/dictionary/SOURCE"
+install -m 644 "$REPO_ROOT"/{LICENSE-MIT,LICENSE-APACHE,THIRD_PARTY_LICENSES} "$DOC/"
 cat > "$DOC/copyright" <<EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: karukan-feat-rakukan
@@ -81,6 +108,15 @@ Copyright: Google Inc. (Mozc project)
 License: BSD-3-Clause
  Mozc 由来のデータ。ライセンス全文と各ファイルの由来はソースリポジトリの
  THIRD_PARTY_LICENSES を参照。
+
+Files: usr/share/karukan-im/dict.bin
+Copyright: Works Applications Co., Ltd.
+           2011-2013 The UniDic Consortium
+           2015-2019 Toshinori Sato
+License: Apache-2.0 and BSD-3-Clause
+ SudachiDict 由来の加工済み辞書。出典と加工内容は dictionary/README.md、
+ 第三者の著作権表示・条件・免責事項は dictionary/LEGAL、
+ Apache License 全文は dictionary/LICENSE-2.0.txt を参照。
 EOF
 cat > "$DOC/changelog" <<EOF
 karukan-fcitx5 ($VERSION) unstable; urgency=medium
@@ -115,8 +151,7 @@ Description: Japanese IME for fcitx5 with neural kana-kanji conversion
  F6-F10 変換・範囲指定変換に対応。
  .
  変換モデルは初回起動時に Hugging Face から自動ダウンロードされる。
- システム辞書 (dict.bin) は同梱しない。導入手順は
- https://github.com/fukuyori/karukan-feat-rakukan/blob/main/docs/dictionary.md
+ システム辞書 (SudachiDict 由来) とライセンス文書を同梱。
 EOF
 
 # fcitx5 reads addon and input-method metadata when the daemon starts. A
@@ -137,6 +172,10 @@ chmod 755 "$STAGE/DEBIAN/postinst"
 # Without the input-method metadata the libraries install successfully, but
 # Karukan never appears in the available-input-method list.
 for packaged_file in \
+    "$STAGE/usr/share/karukan-im/dict.bin" \
+    "$DOC/dictionary/LEGAL" \
+    "$DOC/dictionary/LICENSE-2.0.txt" \
+    "$DOC/dictionary/README.md" \
     "$STAGE/usr/share/fcitx5/addon/karukan.conf" \
     "$STAGE/usr/share/fcitx5/inputmethod/karukan.conf"
 do

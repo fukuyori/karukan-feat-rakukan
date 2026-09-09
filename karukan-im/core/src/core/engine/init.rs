@@ -9,6 +9,25 @@ use crate::config::settings::StrategyMode;
 
 use super::*;
 
+/// Explicit configuration is authoritative; otherwise prefer the user's
+/// dictionary over the read-only dictionary installed by the Linux package.
+fn system_dictionary_path(
+    configured: Option<&str>,
+    data_dir: Option<std::path::PathBuf>,
+    packaged: Option<&std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    if let Some(path) = configured {
+        return Some(path.into());
+    }
+    let user = data_dir.map(|dir| dir.join("dict.bin"));
+    if let Some(path) = &user
+        && path.exists()
+    {
+        return user;
+    }
+    packaged.map(std::path::Path::to_path_buf).or(user)
+}
+
 /// Converters produced by the background model-loading thread, handed to the
 /// engine through the `model_loading` channel.
 pub(super) struct LoadedConverters {
@@ -186,34 +205,32 @@ impl InputMethodEngine {
 
     /// Initialize the system dictionary for candidate lookup
     ///
-    /// Uses `dict_path` from settings if specified, otherwise defaults to `data_dir/dict.bin`.
+    /// Uses `dict_path`, then `data_dir/dict.bin`, then the Linux package dictionary.
     /// If the file doesn't exist, the engine continues without a dictionary.
     pub fn init_system_dictionary(&mut self, dict_path: Option<&str>) {
         if self.dicts.system.is_some() {
             return;
         }
 
-        let path = if let Some(p) = dict_path {
-            std::path::PathBuf::from(p)
-        } else if let Some(data_dir) = Settings::data_dir() {
-            data_dir.join("dict.bin")
-        } else {
-            debug!("Could not determine data directory for system dictionary");
+        let packaged = cfg!(target_os = "linux")
+            .then_some(std::path::Path::new("/usr/share/karukan-im/dict.bin"));
+        let Some(path) = system_dictionary_path(dict_path, Settings::data_dir(), packaged) else {
+            tracing::warn!("Could not determine data directory for system dictionary");
             return;
         };
 
         if !path.exists() {
-            debug!("System dictionary not found at {:?}, skipping", path);
+            tracing::warn!("System dictionary not found at {:?}, skipping", path);
             return;
         }
 
         match Dictionary::load(&path) {
             Ok(dict) => {
-                debug!("System dictionary loaded from {:?}", path);
+                tracing::info!("System dictionary loaded from {:?}", path);
                 self.dicts.system = Some(dict);
             }
             Err(e) => {
-                debug!("Failed to load system dictionary from {:?}: {}", path, e);
+                tracing::warn!("Failed to load system dictionary from {:?}: {}", path, e);
             }
         }
     }
@@ -285,5 +302,62 @@ impl InputMethodEngine {
         }
         self.user_dict_watcher = Some(watcher);
         self.user_dicts_checked = Some(std::time::Instant::now());
+    }
+}
+
+#[cfg(test)]
+mod dictionary_path_tests {
+    use super::system_dictionary_path;
+    use std::path::Path;
+
+    #[test]
+    fn packaged_dictionary_is_used_without_user_dictionary() {
+        let dir = tempfile::tempdir().unwrap();
+        let packaged = Path::new("/usr/share/karukan-im/dict.bin");
+        assert_eq!(
+            system_dictionary_path(None, Some(dir.path().into()), Some(packaged)),
+            Some(packaged.into())
+        );
+        assert_eq!(
+            system_dictionary_path(None, None, Some(packaged)),
+            Some(packaged.into())
+        );
+    }
+
+    #[test]
+    fn user_dictionary_overrides_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("dict.bin");
+        std::fs::write(&user, b"user dictionary").unwrap();
+        assert_eq!(
+            system_dictionary_path(
+                None,
+                Some(dir.path().into()),
+                Some(Path::new("/package/dict.bin"))
+            ),
+            Some(user)
+        );
+    }
+
+    #[test]
+    fn explicit_path_is_authoritative_even_when_missing() {
+        assert_eq!(
+            system_dictionary_path(
+                Some("/custom/missing.bin"),
+                None,
+                Some(Path::new("/package/dict.bin"))
+            ),
+            Some("/custom/missing.bin".into())
+        );
+    }
+
+    #[test]
+    fn platforms_without_package_keep_user_path() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            system_dictionary_path(None, Some(dir.path().into()), None),
+            Some(dir.path().join("dict.bin"))
+        );
+        assert_eq!(system_dictionary_path(None, None, None), None);
     }
 }
