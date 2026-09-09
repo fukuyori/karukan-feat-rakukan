@@ -14,6 +14,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+GITHUB_REPO="fukuyori/karukan-feat-rakukan"
 
 DRY_RUN=0
 SKIP_TESTS=0
@@ -134,7 +135,11 @@ sha256sum -c SHA256SUMS
 \`\`\`"
 
 echo "==> gh release create $TAG"
-gh release create "$TAG" "$DEB" dist/SHA256SUMS --title "$TAG" --notes "$NOTES"
+NOTES_FILE="$(mktemp)"
+printf '%s\n' "$NOTES" > "$NOTES_FILE"
+trap 'rm -f "$NOTES_FILE"' EXIT
+gh release create "$TAG" "$DEB" dist/SHA256SUMS \
+    --repo "$GITHUB_REPO" --verify-tag --title "$TAG" --notes-file "$NOTES_FILE"
 
 echo "==> 完了: https://github.com/fukuyori/karukan-feat-rakukan/releases/tag/$TAG"
-echo "リリースノートの追記: gh release edit $TAG --notes-file <file>"
+echo "リリースノートの追記: gh release edit $TAG --repo $GITHUB_REPO --notes-file <file>"
