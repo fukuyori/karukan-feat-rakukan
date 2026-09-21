@@ -15,7 +15,7 @@ fcitx5（Linux）および macOS Swift フロントエンドで共有される�
 - システム辞書・ユーザー辞書による候補補完
 
 > [!NOTE]
-> モデル推論だけでは語彙が限られるため、システム辞書の併用を強く推奨します。システム辞書はIMEに同梱されていないため、別途インストールが必要です。詳しくは [docs/dictionary.md](../../docs/dictionary.md) を参照してください。
+> モデル推論だけでは語彙が限られるため、システム辞書の併用を強く推奨します。Linux の配布用 `.deb` にはシステム辞書を同梱しています。ソースから導入する場合は `install.sh`（Linux）と `make install`（macOS）が辞書を取得します。詳しくは [docs/dictionary.md](../../docs/dictionary.md) を参照してください。
 
 ## Documentation
 
