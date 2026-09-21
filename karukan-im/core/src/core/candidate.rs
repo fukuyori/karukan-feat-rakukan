@@ -18,6 +18,8 @@ pub enum CandidateSource {
     Dictionary,
     /// Rewriter-generated variant (half-width katakana, symbol)
     Rewriter,
+    /// Date/time candidate rendered from the clock (`[date]` phrases)
+    Date,
     /// Hiragana/katakana fallback
     Fallback,
 }
@@ -32,6 +34,7 @@ impl CandidateSource {
             CandidateSource::Model => "\u{1F916} AI",                  // 🤖 AI
             CandidateSource::Dictionary => "\u{1F4DA} \u{8F9E}\u{66F8}", // 📚 辞書
             CandidateSource::Rewriter => "\u{1F504} \u{5909}\u{63DB}", // 🔄 変換
+            CandidateSource::Date => "\u{1F4C5} \u{65E5}\u{4ED8}",     // 📅 日付
             CandidateSource::Fallback => "",
         }
     }
@@ -46,6 +49,7 @@ impl CandidateSource {
             CandidateSource::Model => "\u{1F916}",          // 🤖
             CandidateSource::Dictionary => "\u{1F4DA}",     // 📚
             CandidateSource::Rewriter => "\u{1F504}",       // 🔄
+            CandidateSource::Date => "\u{1F4C5}",           // 📅
             CandidateSource::Fallback => "",
         }
     }
@@ -63,14 +67,16 @@ impl CandidateSource {
     ///
     /// Fallback is never learned: it is the engine's own placeholder (the
     /// raw reading when nothing produced a conversion), so recording it
-    /// would teach the cache the absence of a conversion. Model and
-    /// Rewriter output is learned only when explicitly chosen, so a wrong
-    /// first guess auto-accepted by a live commit cannot reinforce itself
-    /// into the top spot. Learning and the dictionaries carry surfaces a
-    /// person chose or authored, so they always record.
+    /// would teach the cache the absence of a conversion. Date is never
+    /// learned either — it is rendered from the clock, so a recorded one
+    /// would resurface later as a stale date. Model and Rewriter output is
+    /// learned only when explicitly chosen, so a wrong first guess
+    /// auto-accepted by a live commit cannot reinforce itself into the top
+    /// spot. Learning and the dictionaries carry surfaces a person chose or
+    /// authored, so they always record.
     pub fn records_learning(&self, explicit: bool) -> bool {
         match self {
-            CandidateSource::Fallback => false,
+            CandidateSource::Fallback | CandidateSource::Date => false,
             CandidateSource::Model | CandidateSource::Rewriter => explicit,
             CandidateSource::Learning
             | CandidateSource::UserDictionary
@@ -322,6 +328,9 @@ mod tests {
         // Fallback never records, however it was committed.
         assert!(!Fallback.records_learning(true));
         assert!(!Fallback.records_learning(false));
+        // Date is rendered from the clock, so it never records either.
+        assert!(!Date.records_learning(true));
+        assert!(!Date.records_learning(false));
         // Model and Rewriter record only when explicitly chosen.
         assert!(Model.records_learning(true));
         assert!(!Model.records_learning(false));

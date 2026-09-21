@@ -41,8 +41,9 @@ let Some(model) = load_model() else {
 
 ## 2. 生成トークン数の上限 — 固定値から読み長依存へ
 
-**Karukan では**: モデルの生成上限は `ConversionConfig::max_new_tokens` = 固定50
-トークンだけで、全呼び出しが既定値を使っていた。読みが21文字を超えると正当な
+**Karukan では**: モデルの生成上限は固定50トークン(当時は
+`ConversionConfig::max_new_tokens`、上流のモデル定義整理後は `MAX_NEW_TOKENS`
+定数)だけで、全呼び出しが既定値を使っていた。読みが21文字を超えると正当な
 変換でも出力が途中で切れうる。逆にこの値を単純に増やすと、EOS に到達しない
 異常入力で推論時間が読み長と無関係に伸びる。
 
@@ -433,17 +434,21 @@ Shift+矢印は caret 移動に折り畳まれていて割当が空いていた�
 
 **本リポジトリでは**:
 
-- 先に prefetch を絞った: `prefetch_variants(ids)` を追加し、
-  `karukan-imserver --prefetch-models` は「registry の既定モデル + 設定の
-  `model` / `light_model`」だけを温める。`prefetch_all_models` は残るが
-  インストーラ経路からは外れる
+- 先に prefetch を絞った: `karukan-imserver --prefetch-models` は設定の
+  `[conversion] model` / `light_model` が参照するモデルだけを温める。全件を
+  ダウンロードする経路はインストーラから外した
 - その上で `jinen-v2-small-f16`(210MB)/ `jinen-v2-xsmall-f16`(69MB)を
-  `models.toml` に登録した。**Q5 既定は不変**で、F16 は config.toml で指定した
+  モデル定義に登録した。**Q5 既定は不変**で、F16 は config.toml で指定した
   ときだけダウンロードされる
 - 登録前に HF リポジトリにファイルが実在することを API で確認した。Karukan の
   モデル解決はキャッシュ優先で「更新はファイル名変更でしか反映されない」設計
   なので、存在しないファイルを登録すると選択時に初めて失敗する — 実在確認は必須
-- `model_config.rs` のテストは variant 数をハードアサートしているため 5 → 7 に更新
+
+> 上流 #111 でモデルレジストリ(`karukan-engine/models.toml` /
+> `model_config.rs`)が廃止され、モデル定義は設定側の `[models]` テーブルに
+> 移った。マージ時に本節の実装もそちらへ載せ替えてある: F16 の2件は
+> `karukan-im/core/config/default.toml` の `[models]` に置き、prefetch の
+> 絞り込みは `Settings` 経由で同じ「設定が使うモデルだけ」を維持している。
 
 **計測**(同一コード・基準13ケース・jinen-v2-small): greedy は **13/13 完全
 一致**(Q5 の量子化劣化はこのケース集では観測されず)、beam は下位候補のみ

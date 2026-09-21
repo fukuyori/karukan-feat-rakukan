@@ -9,16 +9,16 @@
 //! ```text
 //! cargo run -p karukan-engine --release --example phase0_baseline -- \
 //!     docs/baselines/phase0-cases.json \
-//!     [--model VARIANT_ID] [--beam N] [--dict PATH]
+//!     [--model MODEL] [--beam N] [--dict PATH]
 //! ```
 //!
-//! モデル既定は registry の default_model、beam 幅既定は 3
-//! (karukan-im の `beam_width` 既定と同じ)。
+//! `--model` は `repo:filename`（Hugging Face）か、ローカル GGUF のパス。
+//! 既定は `togatogah/jinen-v2-small.gguf:jinen-v2-small-Q5_K_M.gguf`、beam 幅
+//! 既定は 3 (karukan-im の `beam_width` 既定と同じ)。
 
 use std::time::Instant;
 
-use karukan_engine::kanji::registry;
-use karukan_engine::{Backend, Dictionary, KanaKanjiConverter};
+use karukan_engine::{Dictionary, KanaKanjiConverter, ModelSource};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -83,12 +83,21 @@ fn main() {
     let cases_path = cases_path
         .expect("usage: phase0_baseline CASES.json [--model ID] [--beam N] [--dict PATH]");
 
-    let model_id = model_id.unwrap_or_else(|| registry().default_model.clone());
+    let model_id = model_id
+        .unwrap_or_else(|| "togatogah/jinen-v2-small.gguf:jinen-v2-small-Q5_K_M.gguf".to_string());
     let json = std::fs::read_to_string(&cases_path).expect("failed to read cases file");
     let cases: Vec<Case> = serde_json::from_str(&json).expect("invalid cases JSON");
 
-    let backend = Backend::from_variant_id(&model_id).expect("failed to resolve model");
-    let converter = KanaKanjiConverter::new(backend).expect("failed to load model");
+    // `repo:filename` は Hugging Face、それ以外はローカル GGUF のパス。
+    let source = match model_id.split_once(':') {
+        Some((repo, filename)) => ModelSource::HuggingFace {
+            repo: repo.to_string(),
+            filename: filename.to_string(),
+        },
+        None => ModelSource::Path(model_id.clone().into()),
+    };
+    let converter =
+        KanaKanjiConverter::from_source(&source, &model_id).expect("failed to load model");
     let dict = dict_path.map(|p| Dictionary::load_auto(&p).expect("failed to load dictionary"));
 
     let mut results = Vec::with_capacity(cases.len());

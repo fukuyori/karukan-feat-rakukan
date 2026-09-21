@@ -31,8 +31,8 @@ use input_buffer::InputBuffer;
 mod tests;
 
 use karukan_engine::{
-    Dictionary, EmojiRewriter, KanaKanjiConverter, LearningCache, LearningConfig, RewriteOutput,
-    Rewriter, RewriterChain, RomajiConverter,
+    DateRewriter, Dictionary, EmojiRewriter, KanaKanjiConverter, LearningCache, LearningConfig,
+    RewriteOutput, Rewriter, RewriterChain, RomajiConverter,
 };
 use tracing::{debug, trace};
 
@@ -40,7 +40,7 @@ use super::candidate::{Candidate, CandidateList, CandidateSource};
 use super::keycode::{KeyEvent, Keysym};
 use super::preedit::Preedit;
 use super::state::InputState;
-use crate::config::settings::{Settings, SpaceStyle};
+use crate::config::settings::{CandidateWindow, Settings, SpaceStyle};
 
 /// A conversion candidate tagged with its source and an optional description.
 ///
@@ -89,25 +89,6 @@ impl AnnotatedCandidate {
             source: Some(self.source),
             description: self.description,
         }
-    }
-}
-
-/// Resolve a model variant id from settings.
-///
-/// - `model` is None or empty → default variant from registry
-/// - `model` matches a known variant id → that variant
-/// - otherwise → error (unknown variant)
-pub fn resolve_variant_id(model: Option<&str>) -> anyhow::Result<String> {
-    let reg = karukan_engine::kanji::registry();
-    match model {
-        Some(id) if !id.is_empty() => {
-            if reg.find_variant(id).is_some() {
-                Ok(id.to_string())
-            } else {
-                anyhow::bail!("unknown model variant: {}", id)
-            }
-        }
-        _ => Ok(reg.default_model.clone()),
     }
 }
 
@@ -205,6 +186,7 @@ impl InputMethodEngine {
                 kanji: None,
                 light_kanji: None,
                 rewriters: RewriterChain::default_chain(),
+                date: DateRewriter::new(karukan_engine::DateConfig::default()),
             },
             surrounding_context: None,
             config: EngineConfig::default(),
@@ -238,6 +220,7 @@ impl InputMethodEngine {
         // width rules too: a keystroke settles at the width in force when
         // it was typed.
         engine.converters.romaji = RomajiConverter::with_rules(config.symbol, config.width);
+        engine.converters.date = DateRewriter::new(config.date.clone());
         engine.config = config;
         engine
     }
@@ -475,13 +458,17 @@ impl InputMethodEngine {
         if key.keysym == Keysym::HENKAN && key.modifiers.any() {
             return None;
         }
-        // While a conversion is in flight (candidate window open) the
-        // toggle is inert: switching modes here would katakana-bake the
-        // conversion *reading* (not the preedit) and defeat the Emoji-mode
-        // learning guard — the commit path checks the current mode to
-        // decide whether the reading is safe to record in the kana-keyed
-        // learning cache. Resolve the conversion first, then toggle.
-        if matches!(self.state, InputState::Conversion { .. }) {
+        // While a conversion is in flight (candidate window open) the kana
+        // modes cannot toggle: switching would katakana-bake the conversion
+        // *reading* (not the preedit) and defeat the Emoji-mode learning
+        // guard — the commit path checks the current mode to decide whether
+        // the reading is safe to record in the kana-keyed learning cache.
+        // Alphabet is exempt: it only says how the next keystroke is read,
+        // and Shift+letter can enter it here (typing refines the reading
+        // instead of committing), so this is the only way back out.
+        if matches!(self.state, InputState::Conversion { .. })
+            && self.mode.current() != InputMode::Alphabet
+        {
             return Some(EngineResult::not_consumed());
         }
         // Only consume the key when actually switching; otherwise pass through
@@ -496,7 +483,17 @@ impl InputMethodEngine {
                 self.bake_katakana();
             }
             self.mode.set(InputMode::Hiragana);
-            let aux = self.format_aux_composing();
+            // An open candidate window keeps its own line, mode indicator
+            // included: a composing line here would hide the source-filter
+            // header mid-view.
+            let aux = match &self.state {
+                InputState::Conversion {
+                    reading,
+                    candidates,
+                    ..
+                } => self.format_aux_conversion(reading, candidates),
+                _ => self.format_aux_composing(),
+            };
             if matches!(self.state, InputState::Composing { .. }) {
                 let preedit = self.set_composing_state();
                 return Some(
@@ -595,6 +592,14 @@ impl InputMethodEngine {
 
     /// Process a key event
     pub fn process_key(&mut self, key: &KeyEvent) -> EngineResult {
+        let result = self.dispatch_key(key);
+        self.hide_candidate_window(result)
+    }
+
+    /// Every key, the state-independent shortcuts included. `process_key`
+    /// applies the candidate-window policy to whatever this returns, so no
+    /// path can reopen a window the setting keeps closed.
+    fn dispatch_key(&mut self, key: &KeyEvent) -> EngineResult {
         // Install converters the background loader has finished; never blocks.
         self.poll_loaded_models();
         self.poll_user_dicts();
@@ -660,16 +665,39 @@ impl InputMethodEngine {
         // conversion_ms reports this key only: 0 unless a conversion runs below
         self.metrics.conversion_ms = 0;
 
-        let shift_active = key.modifiers.shift_key;
-
         let result = match &self.state {
-            InputState::Empty => self.process_key_empty(key, shift_active),
-            InputState::Composing { .. } => self.process_key_composing(key, shift_active),
-            InputState::Conversion { .. } => self.process_key_conversion(key, shift_active),
+            InputState::Empty => self.process_key_empty(key),
+            InputState::Composing { .. } => self.process_key_composing(key),
+            InputState::Conversion { .. } => self.process_key_conversion(key),
         };
 
         self.metrics.process_key_ms = start.elapsed().as_millis() as u64;
 
+        result
+    }
+
+    /// `[display] candidate_window = "conversion"`: no window while
+    /// typing, so the first one is what Space opens. Done on the finished
+    /// result because composing renders come from many paths, the
+    /// state-independent shortcuts among them. The aux
+    /// line lives in that window, so it goes too, and `shown_suggestions`
+    /// is emptied so Ctrl+digit cannot pick what is off screen. The emoji
+    /// picker stays: it is the whole mode.
+    fn hide_candidate_window(&mut self, mut result: EngineResult) -> EngineResult {
+        if self.config.candidate_window == CandidateWindow::Always
+            || !matches!(self.state, InputState::Composing { .. })
+            || self.mode.current() == InputMode::Emoji
+        {
+            return result;
+        }
+        self.shown_suggestions = CandidateList::default();
+        for action in &mut result.actions {
+            match action {
+                EngineAction::ShowCandidates(_) => *action = EngineAction::HideCandidates,
+                EngineAction::UpdateAuxText(_) => *action = EngineAction::HideAuxText,
+                _ => {}
+            }
+        }
         result
     }
 

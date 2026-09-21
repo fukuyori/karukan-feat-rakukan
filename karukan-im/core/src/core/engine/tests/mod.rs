@@ -7,10 +7,12 @@ use crate::core::keycode::KeyModifiers;
 
 mod alphabet;
 mod basic;
+mod candidate_window;
 mod candidates;
 mod chunks;
 mod conversion;
 mod cursor;
+mod date;
 mod emoji;
 mod fkeys;
 mod katakana;
