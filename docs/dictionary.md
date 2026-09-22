@@ -50,7 +50,7 @@ cp dict.bin ~/Library/"Application Support"/com.karukan.karukan-im/
 
 1. 📝 学習キャッシュ
 2. 👤 ユーザー辞書
-3. 🤖 モデル推論
-4. 📚 システム辞書（スコア順）
+3. 📚 システム辞書（スコア順）
+4. 🤖 モデル推論
 5. ひらがな / カタカナ
 6. 🔄 Rewriter（半角カタカナ・英字全角半角・記号バリアント）

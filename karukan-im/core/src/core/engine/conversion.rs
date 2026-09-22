@@ -123,8 +123,17 @@ impl InputMethodEngine {
             && prev_suggest_text != reading
             && !seen.contains(prev_suggest_text.as_str())
         {
+            // Preserve the live model result after learning and dictionaries.
+            let model_position = candidates.partition_point(|c| {
+                matches!(
+                    c.source,
+                    CandidateSource::Learning
+                        | CandidateSource::UserDictionary
+                        | CandidateSource::Dictionary
+                )
+            });
             candidates.insert(
-                0,
+                model_position,
                 AnnotatedCandidate::new(prev_suggest_text, CandidateSource::Model),
             );
         }
@@ -284,7 +293,7 @@ impl InputMethodEngine {
     }
 
     /// Build the mixed candidate list, deduped in priority order:
-    /// Learning → User Dictionary → Model → System Dictionary → Fallback.
+    /// Learning → User Dictionary → System Dictionary → Model → Fallback.
     ///
     /// `base`/`pending` split the reading for the dictionary lookup (the
     /// unresolved romaji tail narrows prediction).
@@ -305,7 +314,7 @@ impl InputMethodEngine {
         let hiragana = reading.to_string();
         let katakana = karukan_engine::hiragana_to_katakana(reading);
 
-        // Priority: Learning → User Dictionary → Model → System Dictionary → Fallback
+        // Priority: Learning → User Dictionary → System Dictionary → Model → Fallback
         let mut builder = CandidateBuilder::new();
 
         // 1. Learning cache candidates (highest priority).
@@ -322,8 +331,7 @@ impl InputMethodEngine {
             }
         }
 
-        // 2. User dictionary candidates (system dictionary follows the model
-        //    in step 4, so the two are split here).
+        // 2/3. User dictionary candidates precede all system dictionary candidates.
         let (user_dict, system_dict): (Vec<_>, Vec<_>) = self
             .search_dictionaries(
                 base,
@@ -339,7 +347,12 @@ impl InputMethodEngine {
             builder.push(ac);
         }
 
-        // 3. Model inference results
+        // 3. System dictionary candidates
+        for ac in system_dict {
+            builder.push(ac);
+        }
+
+        // 4. Model inference results
         if candidates.is_empty() {
             // No literal fallback in emoji mode: `:smile` must not outrank
             // the 😄 surfaced by the rewriter step below.
@@ -353,11 +366,6 @@ impl InputMethodEngine {
             for text in candidates {
                 builder.push(AnnotatedCandidate::new(text, CandidateSource::Model));
             }
-        }
-
-        // 4. System dictionary candidates
-        for ac in system_dict {
-            builder.push(ac);
         }
 
         // 5/6. Hiragana/katakana fallback + rewriter variants. Emoji mode

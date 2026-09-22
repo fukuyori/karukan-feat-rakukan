@@ -97,3 +97,66 @@ fn test_empty_live_text_not_added_to_candidates() {
         );
     }
 }
+
+fn priority_engine() -> InputMethodEngine {
+    let mut engine = engine_with_learned("あい", "愛");
+    engine.dicts.user = Some(dict_from_json(
+        r#"[{"reading":"あい","candidates":[{"surface":"愛","score":0.0},{"surface":"藍","score":1.0}]}]"#,
+    ));
+    engine.dicts.system = Some(dict_from_json(
+        r#"[{"reading":"あい","candidates":[{"surface":"藍","score":0.0},{"surface":"相","score":1.0}]}]"#,
+    ));
+    seed_model_cache(&mut engine, "アイ", "", &["愛", "藍", "相", "合い"]);
+    engine
+}
+
+#[test]
+fn mixed_candidates_prioritize_learning_user_system_then_model() {
+    let mut engine = priority_engine();
+    let candidates = engine.build_conversion_candidates("あい", "あい", "", 5, LearningLookup::Use);
+    let first: Vec<_> = candidates
+        .iter()
+        .take(4)
+        .map(|c| (c.text.as_str(), c.source))
+        .collect();
+    assert_eq!(
+        first,
+        vec![
+            ("愛", CandidateSource::Learning),
+            ("藍", CandidateSource::UserDictionary),
+            ("相", CandidateSource::Dictionary),
+            ("合い", CandidateSource::Model),
+        ]
+    );
+    for text in ["愛", "藍", "相", "合い"] {
+        assert_eq!(candidates.iter().filter(|c| c.text == text).count(), 1);
+    }
+}
+
+#[test]
+fn preserved_live_model_candidate_stays_after_dictionaries() {
+    let mut engine = priority_engine();
+    engine.process_key(&press('a'));
+    engine.process_key(&press('i'));
+    set_live_text(&mut engine, "逢い");
+    engine.process_key(&press_key(Keysym::SPACE));
+    let candidates = engine.state().candidates().unwrap();
+    let texts: Vec<_> = candidates
+        .candidates()
+        .iter()
+        .take(5)
+        .map(|c| c.text.as_str())
+        .collect();
+    assert_eq!(texts, ["愛", "藍", "相", "逢い", "合い"]);
+}
+
+#[test]
+fn system_dictionary_precedes_kana_without_model() {
+    let mut engine = InputMethodEngine::new();
+    engine.dicts.system = Some(dict_from_json(
+        r#"[{"reading":"あい","candidates":[{"surface":"愛","score":1.0}]}]"#,
+    ));
+    let candidates = engine.build_conversion_candidates("あい", "あい", "", 5, LearningLookup::Use);
+    assert_eq!(candidates[0].text, "愛");
+    assert_eq!(candidates[0].source, CandidateSource::Dictionary);
+}
