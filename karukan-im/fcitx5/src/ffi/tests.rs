@@ -33,8 +33,9 @@ struct TestEngine(*mut KarukanEngine);
 
 impl TestEngine {
     fn new() -> Self {
-        let ptr = karukan_engine_new();
-        assert!(!ptr.is_null());
+        // Keep tests independent of the user's config.toml (in particular,
+        // candidate_window="conversion" hides the aux line while composing).
+        let ptr = Box::into_raw(Box::new(KarukanEngine::with_settings(Settings::default())));
         // The context tests read the aux line, which only carries the
         // debug details in verbose mode (Ctrl+Shift+V).
         karukan_engine_process_key(ptr, XKB_KEY_V, MOD_CTRL_SHIFT, 0);
