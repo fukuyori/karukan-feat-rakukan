@@ -450,7 +450,8 @@ GPU対応はビルド時間、配布物、ドライバ依存を増やすため�
 
 | ブランチ | 用途 |
 |---|---|
-| `main` | 検証済みの派生版 |
+| `main` | upstream 同期専用（独自変更なし） |
+| `develop` | 検証済みの派生版・リリース元 |
 | `feat/rakukan-conversion-safety` | Phase 1 |
 | `feat/rakukan-learning` | Phase 2 |
 | `feat/rakukan-fkeys` | Phase 3 |
@@ -459,8 +460,8 @@ GPU対応はビルド時間、配布物、ドライバ依存を増やすため�
 
 上流追従方針:
 
-1. 公開済みの派生`main`はrebaseせず、`upstream/main`を定期的にmergeする。
-2. 作業中のfeatureブランチは、取り込み前に最新の派生`main`へrebaseしてよい。
+1. `main` は `upstream/main` に同期する。公開済みの `develop` は rebase せず、`main` を定期的に merge する。
+2. 作業中のfeatureブランチは、取り込み前に最新の `develop`へrebaseしてよい。
 3. 上流同期とRakukan機能移植を同じコミットに混ぜない。
 4. 競合解決後はworkspace全体のテストを実行する。
 5. Rakukanリポジトリは参照元として扱い、異なる履歴を直接mergeしない。

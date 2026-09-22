@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GitHub Release の作成(タグ付け → .deb ビルド → アップロードまで)
+# develop から GitHub Release を作成(タグ付け → .deb ビルド → アップロードまで)
 #
 #   scripts/github-release.sh                    # 次の v0.1.0-rakukan.<N+1> でリリース
 #   scripts/github-release.sh v0.2.0-rakukan.1   # タグ名を指定
@@ -38,14 +38,14 @@ done
 
 # --- 前提チェック -----------------------------------------------------------
 
-[ "$(git branch --show-current)" = main ] || { echo "エラー: main ブランチで実行してください" >&2; exit 1; }
+[ "$(git branch --show-current)" = develop ] || { echo "エラー: develop ブランチで実行してください" >&2; exit 1; }
 [ -z "$(git status --porcelain --untracked-files=no)" ] || {
     echo "エラー: 未コミットの変更があります (-dirty がバイナリに入ります)" >&2; exit 1; }
 
-echo "==> タグと origin/main を取得"
+echo "==> タグと origin/develop を取得"
 git fetch --tags origin
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || {
-    echo "エラー: HEAD が origin/main と一致しません (push または pull してください)" >&2; exit 1; }
+[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/develop)" ] || {
+    echo "エラー: HEAD が origin/develop と一致しません (push または pull してください)" >&2; exit 1; }
 
 # --- タグ名の決定 -----------------------------------------------------------
 

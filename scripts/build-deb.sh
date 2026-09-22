@@ -122,7 +122,7 @@ cat > "$DOC/changelog" <<EOF
 karukan-fcitx5 ($VERSION) unstable; urgency=medium
 
   * Build from git $HASH.
-    See https://github.com/fukuyori/karukan-feat-rakukan/commits/main
+    See https://github.com/fukuyori/karukan-feat-rakukan/commits/develop
 
  -- fukuyori <fukuyori.n@gmail.com>  $(git -C "$REPO_ROOT" show -s --format=%cD HEAD)
 EOF
